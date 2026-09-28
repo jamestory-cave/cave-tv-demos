@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>03 Strips · Cave TV</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Inter:wght@300;400;500&display=swap">
+<style>
+/* ------------------------------------------------------------------
+   03 STRIPS — an accordion of full-height photo strips.
+   Level 0: seven strips. Level 1: six slivers on the left, the chosen
+   section opens and its four items are four new strips. Level 2: the
+   three unchosen items become slivers too and the chosen item widens
+   into the leaf. Everything below is rendered from CONTENT (script).
+   ------------------------------------------------------------------ */
+:root{
+  --gold:#b7996d;
+  --ground:#050505;
+  --ease:cubic-bezier(.2,.8,.2,1);   /* gentle ease-out, no overshoot */
+  --dur:420ms;                        /* accordion duration; JS sets 220ms for focus moves, 420ms for level changes */
+}
+html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:#050505}
+body{font-family:Inter,sans-serif;color:#fff;-webkit-font-smoothing:antialiased}
+.stage{position:relative;width:1920px;height:1080px;overflow:hidden;background:var(--ground)}
+.layer{position:absolute;inset:0}
+#sections{z-index:10}
+#items{z-index:20}
+
+/* ---- a strip ---------------------------------------------------- */
+.strip{
+  position:absolute;top:0;height:1080px;overflow:hidden;background:var(--ground);
+  transition:left var(--dur) var(--ease),width var(--dur) var(--ease),opacity 300ms var(--ease),transform 420ms var(--ease);
+}
+.photo{position:absolute;inset:0;transform:scale(1);transition:transform 500ms var(--ease)}
+.photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;animation:kb 12s ease-in-out infinite alternate}
+@keyframes kb{from{transform:scale(1)}to{transform:scale(1.06)}}
+.scrim{position:absolute;inset:0;background:var(--ground);opacity:.64;transition:opacity 500ms var(--ease)}
+.grad{position:absolute;left:0;right:0;bottom:0;height:560px;background:linear-gradient(to top,rgba(5,5,5,.94) 0%,rgba(5,5,5,.55) 40%,rgba(5,5,5,0) 100%);opacity:0;transition:opacity 500ms var(--ease)}
+.ring{position:absolute;inset:0;box-shadow:inset 0 0 0 4px var(--gold),inset 0 0 70px rgba(183,153,109,.32);opacity:0;transition:opacity 220ms var(--ease)}
+
+/* vertical name (closed strip) */
+.vname{
+  position:absolute;left:50%;top:50%;writing-mode:vertical-rl;white-space:nowrap;
+  transform:translate(-50%,-50%) rotate(180deg) scale(1);
+  font-family:Cinzel,serif;font-size:36px;font-weight:400;letter-spacing:.18em;text-transform:uppercase;
+  color:rgba(255,255,255,.62);
+  transition:opacity 220ms var(--ease),transform 420ms var(--ease),color 400ms var(--ease);
+}
+/* horizontal caption (open strip) */
+.caption{
+  position:absolute;left:90px;bottom:110px;width:720px;
+  opacity:0;transform:translateY(22px);
+  transition:opacity 220ms var(--ease),transform 420ms var(--ease);
+}
+.strip[data-kind=item] .caption{width:700px}
+.label{font-family:Cinzel,serif;font-size:22px;letter-spacing:.32em;text-transform:uppercase;color:var(--gold);margin:0 0 20px 4px;opacity:0;transition:opacity 400ms var(--ease)}
+.hname{font-family:Cinzel,serif;font-size:84px;font-weight:500;line-height:1.06;letter-spacing:.02em;color:#fff;text-shadow:0 2px 24px rgba(0,0,0,.45)}
+
+/* the leaf's empty content panel */
+.panel{
+  position:absolute;right:90px;bottom:110px;width:516px;height:260px;box-sizing:border-box;
+  border:1px solid rgba(183,153,109,.62);background:rgba(5,5,5,.42);
+  -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
+  opacity:0;transform:translateY(20px);
+  transition:opacity 420ms var(--ease) 0ms,transform 420ms var(--ease) 0ms;
+}
+
+/* ---- strip states ------------------------------------------------ */
+.strip.is-sliver .scrim{opacity:.8}
+.strip.is-sliver .vname{transform:translate(-50%,-50%) rotate(180deg) scale(.6);color:rgba(255,255,255,.42)}
+
+.strip.is-host .scrim{opacity:.82}
+.strip.is-host .vname{opacity:0}
+
+.strip.is-current .scrim{opacity:.3}
+.strip.is-current .grad{opacity:1}
+.strip.is-current .vname{opacity:0}
+.strip.is-current .caption{opacity:1;transform:none}
+.strip.is-current .photo{transform:scale(1.02)}
+.strip[data-kind=item].is-current .label{opacity:1}
+
+.strip.is-focused .scrim{opacity:.12}
+.strip.is-focused .ring{opacity:1}
+.strip.is-focused .photo{transform:scale(1.05)}
+
+.strip.is-leaf .scrim{opacity:.5}
+.strip.is-leaf .grad{opacity:1}
+.strip.is-leaf .vname{opacity:0}
+.strip.is-leaf .caption{opacity:1;transform:none}
+.strip.is-leaf .label{opacity:1}
+.strip.is-leaf .photo{transform:scale(1)}
+.strip.is-leaf .panel{opacity:1;transform:none;transition-delay:240ms,240ms}
+
+/* entrance and exit of a level's strips (opacity + transform only) */
+.strip.is-enter{opacity:0;transform:translateY(36px)}
+.strip.is-stagger{transition-delay:0ms,0ms,var(--d),var(--d)}
+.strip.is-out{opacity:0;transform:translateY(36px);transition-delay:0ms!important}
+
+/* ---- chrome: path line, back, tagline, legend -------------------- */
+.scrim-top{position:absolute;left:0;top:0;width:1920px;height:240px;z-index:30;pointer-events:none;
+  background:linear-gradient(to bottom,rgba(5,5,5,.88) 0%,rgba(5,5,5,.5) 45%,rgba(5,5,5,0) 100%)}
+
+.path{position:absolute;left:90px;top:60px;height:44px;display:flex;align-items:center;z-index:40}
+.path .logo{height:40px;display:block;transition:opacity 350ms var(--ease)}
+.stage.deep .path .logo{opacity:.6}
+.seg{display:flex;align-items:center;font-weight:400;font-size:24px;letter-spacing:.02em;color:rgba(183,153,109,.6);
+  opacity:0;transform:translateX(-16px);white-space:nowrap;
+  transition:opacity 350ms var(--ease),transform 350ms var(--ease),color 350ms var(--ease)}
+.seg.in{opacity:1;transform:none}
+.seg.cur{color:#fff}
+.seg .chev{color:rgba(183,153,109,.6);margin:0 18px;font-size:26px;position:relative;top:-2px}
+
+.slot{position:absolute;left:90px;top:122px;z-index:40}
+.tagline{font-weight:300;font-size:22px;letter-spacing:.06em;color:rgba(255,255,255,.55);white-space:nowrap;
+  transition:opacity 350ms var(--ease),transform 350ms var(--ease)}
+.stage.deep .tagline{opacity:0;transform:translateX(-10px)}
+.back{
+  position:absolute;left:-22px;top:-9px;display:flex;align-items:center;gap:10px;
+  padding:7px 22px 7px 18px;border:2px solid transparent;border-radius:999px;
+  font-weight:400;font-size:24px;letter-spacing:.02em;color:rgba(183,153,109,.6);white-space:nowrap;
+  opacity:0;transform:translateX(-10px);
+  transition:opacity 350ms var(--ease),transform 220ms var(--ease),color 220ms var(--ease),border-color 220ms var(--ease),background-color 220ms var(--ease),box-shadow 220ms var(--ease);
+}
+.back .chev{font-size:34px;line-height:0;position:relative;top:-3px}
+.stage.deep .back{opacity:1;transform:none}
+.stage.deep .back.is-focused{
+  color:#fff;border-color:var(--gold);background:rgba(183,153,109,.14);
+  box-shadow:0 0 28px rgba(183,153,109,.35);transform:scale(1.08);transform-origin:left center;
+}
+.back.is-focused .chev{color:var(--gold)}
+
+.legend{position:absolute;right:90px;bottom:60px;z-index:40;font-weight:400;font-size:18px;letter-spacing:.02em;
+  color:rgba(255,255,255,.35);text-shadow:0 1px 12px rgba(0,0,0,.6);transition:opacity 700ms var(--ease)}
+.legend.hidden{opacity:0}
+</style>
+</head>
+<body>
+<div class="stage" id="stage">
+  <div class="layer" id="sections"></div>
+  <div class="layer" id="items"></div>
+  <div class="scrim-top"></div>
+  <div class="path" id="path"><img class="logo" id="logo" alt="Cave"></div>
+  <div class="slot">
+    <div class="tagline" id="tagline"></div>
+    <div class="back" id="back"><span class="chev">‹</span><span>Back</span></div>
+  </div>
+  <div class="legend" id="legend">← ↑ → ↓ move · Enter select · Esc back</div>
+</div>
+
+<script>
+/* ==================================================================
+   CONTENT — the only place hotel words and pictures live.
+   The real app receives exactly this shape as JSON.
+   ================================================================== */
+const CONTENT = {
+  logo: 'assets/CaveLogo.png',
+  tagline: 'A hotel like no other awaits',
+  sections: [
+    { name: 'Your Room', photo: 'assets/hero-room.jpg', items: [
+      { name: 'Lighting',     photo: 'assets/penthouse-2.jpg' },
+      { name: 'Curtains',     photo: 'assets/penthouse-3.jpg' },
+      { name: 'TV & AirPlay', photo: 'assets/penthouse-4.jpg' },
+      { name: 'Coffee',       photo: 'assets/penthouse-5.jpg' } ] },
+    { name: 'Eat & Drink', photo: 'assets/hero-eat.jpg', items: [
+      { name: 'Firepit',            photo: 'assets/hero-firepit.jpg' },
+      { name: 'The Korean Cowgirl', photo: 'assets/hero-cowgirl.jpg' },
+      { name: 'The Deck',           photo: 'assets/hero-deck.jpg' },
+      { name: 'Room Service',       photo: 'assets/hero-roomservice.jpg' } ] },
+    { name: 'Pool & Wellness', photo: 'assets/hero-pool.jpg', items: [
+      { name: 'Pool',       photo: 'assets/hero-pool.jpg' },
+      { name: 'Sauna',      photo: 'assets/hero-gym.jpg' },
+      { name: 'Gym',        photo: 'assets/hero-gym.jpg' },
+      { name: 'Treatments', photo: 'assets/hero-suite.jpg' } ] },
+    { name: 'Golf', photo: 'assets/hero-golf.jpg', items: [
+      { name: 'The Course',    photo: 'assets/hero-golf.jpg' },
+      { name: 'Driving Range', photo: 'assets/golf-2.jpg' },
+      { name: 'Tee Times',     photo: 'assets/hero-golf.jpg' },
+      { name: 'Coaching',      photo: 'assets/golf-2.jpg' } ] },
+    { name: "What's On", photo: 'assets/hero-events.jpg', items: [
+      { name: 'This Week',  photo: 'assets/hero-events.jpg' },
+      { name: 'Live Music', photo: 'assets/deck-evening.jpg' },
+      { name: 'Seasonal',   photo: 'assets/hero-events.jpg' },
+      { name: 'Offers',     photo: 'assets/hero-breakfast.jpg' } ] },
+    { name: 'Explore Kent', photo: 'assets/hero-explore.jpg', items: [
+      { name: 'Canterbury',     photo: 'assets/hero-explore.jpg' },
+      { name: 'Whitstable',     photo: 'assets/hero-explore.jpg' },
+      { name: 'Walks',          photo: 'assets/hero-hotel.jpg' },
+      { name: 'Getting Around', photo: 'assets/hero-explore.jpg' } ] },
+    { name: 'Contact', photo: 'assets/hero-hotel.jpg', items: [
+      { name: 'Reception',    photo: 'assets/hero-hotel.jpg' },
+      { name: 'Housekeeping', photo: 'assets/hero-room.jpg' },
+      { name: 'Wi-Fi',        photo: 'assets/penthouse-6.jpg' },
+      { name: 'Check-out',    photo: 'assets/hero-hotel.jpg' } ] }
+  ]
+};
+
+/* ==================================================================
+   GEOMETRY — every width on screen comes from these numbers.
+   Level 0:  6 × 170 + 900                      = 1920
+   Level 1:  6 × 48 + 16 gap + (3 × 220 + 956)  = 1920
+   Level 2:  6 × 48 + 16 + 3 × 48 + 16 + 1456   = 1920
+   ================================================================== */
+const G = { W: 1920, closed0: 170, open0: 900, sliver: 48, gap: 16, closed1: 220, open1: 956 };
+G.hostX = 6 * G.sliver + G.gap;                 // 304
+G.hostW = G.W - G.hostX;                        // 1616
+G.leafX = G.hostX + 3 * G.sliver + G.gap;       // 464
+G.leafW = G.W - G.leafX;                        // 1456
+
+const FOCUS_MS = 220, LEVEL_MS = 420;
+
+/* ==================================================================
+   STATE
+   ================================================================== */
+const state = { level: 0, s: 0, i: 0, focus: 'strip' };   // focus: 'strip' | 'back'
+
+const $ = id => document.getElementById(id);
+const stage = $('stage'), sectionsEl = $('sections'), itemsEl = $('items');
+const pathEl = $('path'), backEl = $('back'), legendEl = $('legend');
+
+/* ==================================================================
+   BUILD
+   ================================================================== */
+function makeStrip(kind, node, k, labelText) {
+  const el = document.createElement('div');
+  el.className = 'strip';
+  el.dataset.kind = kind;
+  el.style.zIndex = String(k + 1);              // later strips slide over earlier ones when they shuffle left
+  el.innerHTML =
+    '<div class="photo"><img alt=""></div>' +
+    '<div class="scrim"></div><div class="grad"></div><div class="ring"></div>' +
+    '<div class="vname"></div>' +
+    '<div class="caption"><div class="label"></div><div class="hname"></div></div>' +
+    (kind === 'item' ? '<div class="panel"></div>' : '');
+  const img = el.querySelector('img');
+  img.src = node.photo;
+  img.style.animationDelay = (-(k * 1.9) - (kind === 'item' ? 5 : 0)) + 's';   // de-phase the Ken Burns
+  el.querySelector('.vname').textContent = node.name;
+  el.querySelector('.hname').textContent = node.name;
+  el.querySelector('.label').textContent = labelText || '';
+  return el;
+}
+
+const sectionEls = CONTENT.sections.map((sec, k) => {
+  const el = makeStrip('section', sec, k, '');
+  sectionsEl.appendChild(el);
+  return el;
+});
+let itemEls = [];
+
+$('logo').src = CONTENT.logo;
+$('tagline').textContent = CONTENT.tagline;
+
+// warm the cache so no strip ever appears black
+CONTENT.sections.forEach(s => { new Image().src = s.photo; s.items.forEach(it => { new Image().src = it.photo; }); });
+
+/* ==================================================================
+   LAYOUT — pure function of state, animated by CSS transitions
+   ================================================================== */
+function place(el, x, w) { el.style.left = x + 'px'; el.style.width = w + 'px'; }
+function setClasses(el, on) {
+  ['is-sliver', 'is-host', 'is-current', 'is-focused', 'is-leaf'].forEach(c => el.classList.toggle(c, on.includes(c)));
+}
+
+function layoutSections() {
+  let x = 0;
+  if (state.level === 0) {
+    sectionEls.forEach((el, k) => {
+      const open = k === state.s;
+      const w = open ? G.open0 : G.closed0;
+      place(el, x, w); x += w;
+      setClasses(el, open ? ['is-current', 'is-focused'] : []);
+    });
+  } else {
+    sectionEls.forEach((el, k) => {
+      if (k === state.s) { place(el, G.hostX, G.hostW); setClasses(el, ['is-host']); }
+      else { place(el, x, G.sliver); x += G.sliver; setClasses(el, ['is-sliver']); }
+    });
+  }
+}
+
+function layoutItems() {
+  if (state.level === 0) return;
+  let x = G.hostX;
+  if (state.level === 1) {
+    itemEls.forEach((el, k) => {
+      const open = k === state.i;
+      const w = open ? G.open1 : G.closed1;
+      place(el, x, w); x += w;
+      setClasses(el, open ? (state.focus === 'strip' ? ['is-current', 'is-focused'] : ['is-current']) : []);
+    });
+  } else {
+    itemEls.forEach((el, k) => {
+      if (k === state.i) { place(el, G.leafX, G.leafW); setClasses(el, ['is-leaf']); }
+      else { place(el, x, G.sliver); x += G.sliver; setClasses(el, ['is-sliver']); }
+    });
+  }
+}
+
+function layoutChrome() {
+  stage.classList.toggle('deep', state.level > 0);
+  backEl.classList.toggle('is-focused', state.level > 0 && state.focus === 'back');
+  renderPath();
+}
+
+function render(ms) {
+  stage.style.setProperty('--dur', ms + 'ms');
+  layoutSections();
+  layoutItems();
+  layoutChrome();
+}
+
+/* ---- path line: Cave › Section › Item ---------------------------- */
+let segs = [];   // [{text, el}]
+function renderPath() {
+  const want = [];
+  if (state.level >= 1) want.push(CONTENT.sections[state.s].name);
+  if (state.level >= 2) want.push(CONTENT.sections[state.s].items[state.i].name);
+  // remove extra or changed segments from the end
+  while (segs.length && (segs.length > want.length || segs[segs.length - 1].text !== want[segs.length - 1])) {
+    const seg = segs.pop();
+    seg.el.classList.remove('in', 'cur');
+    setTimeout(() => seg.el.remove(), 400);
+  }
+  // add missing ones
+  for (let k = segs.length; k < want.length; k++) {
+    const el = document.createElement('span');
+    el.className = 'seg';
+    el.innerHTML = '<span class="chev">›</span><span class="txt"></span>';
+    el.querySelector('.txt').textContent = want[k];
+    pathEl.appendChild(el);
+    segs.push({ text: want[k], el });
+    requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('in')));
+  }
+  segs.forEach((seg, k) => seg.el.classList.toggle('cur', k === segs.length - 1));
+}
+
+/* ==================================================================
+   TRANSITIONS BETWEEN LEVELS
+   ================================================================== */
+function mountItems() {
+  const sec = CONTENT.sections[state.s];
+  itemEls = sec.items.map((it, k) => {
+    const el = makeStrip('item', it, k, sec.name);
+    el.classList.add('is-enter', 'is-stagger');
+    el.style.setProperty('--d', (140 + k * 36) + 'ms');
+    itemsEl.appendChild(el);
+    return el;
+  });
+  layoutItems();                               // initial geometry, no transition (just inserted)
+  void itemsEl.offsetWidth;                    // commit
+  itemEls.forEach(el => el.classList.remove('is-enter'));
+  const mounted = itemEls;
+  setTimeout(() => mounted.forEach(el => el.classList.remove('is-stagger')), 800);
+}
+
+function unmountItems() {
+  const old = itemEls;
+  itemEls = [];
+  old.forEach(el => { el.classList.remove('is-stagger'); el.classList.add('is-out'); });
+  setTimeout(() => old.forEach(el => el.remove()), 480);
+}
+
+function openSection() {           // level 0 → 1
+  state.level = 1; state.i = 0; state.focus = 'strip';
+  stage.style.setProperty('--dur', LEVEL_MS + 'ms');
+  layoutSections();
+  mountItems();
+  layoutChrome();
+}
+
+function openItem() {              // level 1 → 2
+  state.level = 2; state.focus = 'back';
+  render(LEVEL_MS);
+}
+
+function goBack() {
+  if (state.level === 0) return;   // Menu at home does nothing
+  if (state.level === 2) { state.level = 1; state.focus = 'strip'; render(LEVEL_MS); return; }
+  // level 1 → 0
+  state.level = 0; state.focus = 'strip';
+  unmountItems();
+  render(LEVEL_MS);
+}
+
+function goHome() {
+  if (state.level === 0) return;
+  state.level = 0; state.focus = 'strip';
+  unmountItems();
+  render(LEVEL_MS);
+}
+
+/* ==================================================================
+   INPUT — arrows = swipe, Enter/Space = click, Esc/Backspace = Menu
+   ================================================================== */
+const HANDLED = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Enter', ' ', 'Escape', 'Backspace', 'Home']);
+
+function onKey(e) {
+  if (!HANDLED.has(e.key)) return;
+  e.preventDefault();
+  touchLegend();
+  const key = e.key === ' ' ? 'Enter' : e.key;
+
+  if (key === 'Escape' || key === 'Backspace') { goBack(); return; }
+  if (key === 'Home') { goHome(); return; }
+
+  if (state.level === 0) {
+    if (key === 'ArrowLeft' && state.s > 0) { state.s--; render(FOCUS_MS); }
+    else if (key === 'ArrowRight' && state.s < CONTENT.sections.length - 1) { state.s++; render(FOCUS_MS); }
+    else if (key === 'Enter') openSection();
+    return;
+  }
+
+  if (state.level === 1) {
+    const n = CONTENT.sections[state.s].items.length;
+    if (state.focus === 'strip') {
+      if (key === 'ArrowLeft') { if (state.i > 0) { state.i--; render(FOCUS_MS); } else goBack(); }
+      else if (key === 'ArrowRight') { if (state.i < n - 1) { state.i++; render(FOCUS_MS); } }
+      else if (key === 'ArrowUp') { state.focus = 'back'; render(FOCUS_MS); }
+      else if (key === 'Enter') openItem();
+    } else {                                    // Back is focused
+      if (key === 'ArrowDown') { state.focus = 'strip'; render(FOCUS_MS); }
+      else if (key === 'ArrowLeft' || key === 'Enter') goBack();
+    }
+    return;
+  }
+
+  // level 2: the leaf. Back is the only focusable thing.
+  if (key === 'Enter' || key === 'ArrowLeft') goBack();
+}
+document.addEventListener('keydown', onKey);
+
+/* ---- remote legend: hides after 6s of use, returns after 8s idle -- */
+let hideT = null, idleT = null;
+function touchLegend() {
+  clearTimeout(idleT);
+  idleT = setTimeout(() => { legendEl.classList.remove('hidden'); hideT = null; }, 8000);
+  if (!legendEl.classList.contains('hidden') && hideT === null) {
+    hideT = setTimeout(() => { legendEl.classList.add('hidden'); hideT = null; }, 6000);
+  }
+}
+
+/* ==================================================================
+   FIRST PAINT
+   ================================================================== */
+stage.style.setProperty('--dur', '0ms');
+layoutSections();
+layoutChrome();
+void stage.offsetWidth;
+stage.style.setProperty('--dur', FOCUS_MS + 'ms');
+</script>
+<script src="remote-bridge.js"></script>
+</body>
+</html>

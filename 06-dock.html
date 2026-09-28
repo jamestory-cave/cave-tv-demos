@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>06 Dock · Cave TV demo</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Inter:wght@300;400;500&display=swap">
+<style>
+:root{
+  --gold:#b7996d;
+  --ground:#050505;
+  --focus:200ms cubic-bezier(.3,1.25,.45,1);      /* gentle spring, slight settle */
+  --level:400ms cubic-bezier(.22,.61,.36,1);      /* ease-out for level moves */
+  --photo:500ms ease;                             /* photo crossfades */
+}
+html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:#050505}
+body{color:#fff;font-family:Inter,sans-serif;-webkit-font-smoothing:antialiased}
+.stage{position:relative;width:1920px;height:1080px;overflow:hidden;background:#050505}
+
+/* ---------- photography ---------- */
+.bg,.leafbg{position:absolute;inset:0;width:1920px;height:1080px;object-fit:cover;opacity:0;
+  transition:opacity var(--photo);animation:kb 12s ease-in-out infinite alternate;will-change:transform,opacity}
+@keyframes kb{from{transform:scale(1)}to{transform:scale(1.06)}}
+.bg.show{opacity:.62}
+.l1 .bg.show{opacity:.5}
+.l2 .bg.show{opacity:0}
+.leafbg.show{opacity:.85}
+.scrim{position:absolute;inset:0;background:linear-gradient(180deg,rgba(5,5,5,.62) 0%,rgba(5,5,5,.1) 30%,rgba(5,5,5,.3) 65%,rgba(5,5,5,.95) 100%)}
+.dim{position:absolute;inset:0;background:#050505;opacity:0;transition:opacity var(--level)}
+.l1 .dim{opacity:.5}
+.l2 .dim{opacity:.42}
+
+/* ---------- logo + path line (the logo is the "Cave" crumb) ---------- */
+.logo{position:absolute;left:90px;top:60px;height:46px;transition:opacity var(--level)}
+.l1 .logo,.l2 .logo{opacity:.6}
+.path{position:absolute;left:214px;top:60px;height:46px;display:flex;align-items:center;
+  font-size:24px;font-weight:400;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap}
+.crumb{display:flex;align-items:center;color:rgba(183,153,109,.6);opacity:0;transform:translateX(-14px);
+  transition:opacity 350ms ease,transform 350ms cubic-bezier(.22,.61,.36,1),color 300ms ease}
+.crumb::before{content:'›';margin:0 18px;color:rgba(183,153,109,.6);font-size:28px;position:relative;top:-2px}
+.crumb.in{opacity:1;transform:none}
+.crumb.last{color:#fff}
+.crumb.swap{opacity:0;transition-duration:160ms}
+
+/* ---------- home tagline ---------- */
+.tagline{position:absolute;left:0;right:0;bottom:236px;text-align:center;font-family:Cinzel,serif;font-size:34px;font-weight:400;
+  letter-spacing:.22em;text-transform:uppercase;color:rgba(255,255,255,.85);transition:opacity var(--level),transform var(--level)}
+.l1 .tagline,.l2 .tagline{opacity:0;transform:translateY(18px)}
+
+/* ---------- level 1: four square tiles ---------- */
+.tiles{position:absolute;left:0;right:0;top:250px;display:flex;justify-content:center;align-items:flex-start;gap:40px;font-family:Cinzel,serif}
+.tile{width:370px;opacity:0;transform:translateY(44px);transition:opacity var(--level),transform var(--level)}
+.tiles.in .tile{opacity:1;transform:none;transition-delay:calc(var(--i)*38ms)}
+.tiles.in .tile.drop{opacity:0;transform:translateY(70px);transition-delay:0ms}
+.tiles.in .tile.grow{opacity:0;transform:scale(1.8);transition:opacity 450ms ease-in,transform 450ms cubic-bezier(.22,.61,.36,1);transition-delay:0ms}
+.tile .ph{position:relative;width:370px;height:370px;border-radius:8px;overflow:hidden;background:#0a0a0a;
+  transform:scale(1);transition:transform var(--focus);box-shadow:0 24px 60px rgba(0,0,0,.6)}
+.tile .ph img{width:100%;height:100%;object-fit:cover;opacity:.55;transition:opacity var(--focus)}
+.tile .ph::after{content:'';position:absolute;inset:0;border:4px solid var(--gold);border-radius:8px;opacity:0;transition:opacity var(--focus)}
+.tile .name{margin-top:26px;text-align:center;font-size:30px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;
+  color:rgba(255,255,255,.55);line-height:1.2;transition:color var(--focus),transform var(--focus)}
+.tile.focus .ph{transform:scale(1.08)}
+.tile.focus .ph img,.tile.current .ph img{opacity:1}
+.tile.focus .ph::after{opacity:1}
+.tile.focus .name{color:#fff;transform:translateY(14px)}
+.tile.current .name{color:rgba(255,255,255,.85)}
+
+/* ---------- level 2: the leaf ---------- */
+.leaf{position:absolute;left:90px;top:300px;width:1740px;pointer-events:none}
+.leaf .k{opacity:0;transform:translateY(22px);transition:opacity var(--level),transform var(--level)}
+.leaf.in .k{opacity:1;transform:none}
+.leaf.in .sec{transition-delay:140ms}
+.leaf.in .name{transition-delay:200ms}
+.leaf.in .panel{transition-delay:280ms}
+.leaf .sec{font-size:24px;letter-spacing:.24em;text-transform:uppercase;color:var(--gold)}
+.leaf .name{font-family:Cinzel,serif;font-size:88px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;line-height:1.1;margin-top:14px;color:#fff}
+.leaf .name .t{display:inline-block;transition:opacity 180ms ease}
+.leaf .name .t.swap{opacity:0}
+.leaf .panel{margin-top:44px;width:900px;height:180px;border:1px solid rgba(183,153,109,.6);border-radius:6px;background:rgba(5,5,5,.25)}
+
+/* level 1 receded: thumbnails above the dock strip */
+.thumbs{position:absolute;left:0;right:0;bottom:140px;display:flex;justify-content:center;gap:22px}
+.thumb{width:128px;height:128px;opacity:0;transform:translateY(24px);transition:opacity var(--level),transform var(--level)}
+.thumbs.in .thumb{opacity:1;transform:none;transition-delay:calc(220ms + var(--i)*35ms)}
+.thumb .im{position:relative;width:128px;height:128px;border-radius:6px;overflow:hidden;background:#0a0a0a;
+  transition:transform var(--focus);box-shadow:0 14px 34px rgba(0,0,0,.6)}
+.thumb .im img{width:100%;height:100%;object-fit:cover;opacity:.5;transition:opacity var(--focus)}
+.thumb .im::after{content:'';position:absolute;inset:0;border:3px solid var(--gold);border-radius:6px;opacity:0;transition:opacity var(--focus)}
+.thumb.focus .im{transform:scale(1.1)}
+.thumb.focus .im img,.thumb.current .im img{opacity:1}
+.thumb.focus .im::after{opacity:1}
+.thumb.current .im::after{opacity:.6}
+.thumb .im.pulse{animation:pulse 260ms cubic-bezier(.22,.61,.36,1)}
+@keyframes pulse{0%{transform:scale(1.1)}45%{transform:scale(1.17)}100%{transform:scale(1.1)}}
+
+/* ---------- the dock ---------- */
+.dock{position:absolute;left:0;right:0;bottom:78px;display:flex;justify-content:center;transform-origin:50% 100%;
+  transition:transform var(--level),opacity var(--level);will-change:transform}
+.l1 .dock,.l2 .dock{transform:translateY(18px) scale(.72);opacity:.55}
+.l1.zone-dock .dock,.l2.zone-dock .dock{transform:translateY(14px) scale(.78);opacity:1}
+.pills{position:relative;display:flex;align-items:center;gap:10px;font-family:Cinzel,serif}
+.pill{height:70px;padding:0 26px;display:flex;align-items:center;border:1px solid rgba(183,153,109,.7);border-radius:999px;
+  background:rgba(255,255,255,.06);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+  font-size:24px;font-weight:500;letter-spacing:.05em;text-transform:uppercase;color:rgba(255,255,255,.86);white-space:nowrap;
+  transform:scale(1);transition:transform var(--focus),color var(--focus),background-color var(--focus),border-color var(--focus),box-shadow var(--focus)}
+.pill.held{border-color:var(--gold);color:var(--gold)}
+.l1 .pill:not(.focus):not(.held),.l2 .pill:not(.focus):not(.held){color:rgba(255,255,255,.45);border-color:rgba(183,153,109,.35)}
+.pill.focus{background:var(--gold);border-color:var(--gold);color:#050505;transform:scale(1.1);
+  box-shadow:0 0 0 2px rgba(183,153,109,.35),0 18px 50px rgba(0,0,0,.65)}
+/* back affordance: lives at the left end of the dock strip, on the focus path */
+.back{position:absolute;right:100%;top:0;height:70px;margin-right:44px;display:flex;align-items:center;gap:14px;
+  font-family:Inter,sans-serif;font-size:33px;font-weight:400;letter-spacing:.02em;color:rgba(183,153,109,.6);
+  opacity:0;transform:scale(1);transform-origin:100% 50%;transition:opacity var(--level),color var(--focus),transform var(--focus);white-space:nowrap}
+.back .chev{font-size:44px;line-height:1;color:var(--gold);position:relative;top:-4px}
+.l1 .back,.l2 .back{opacity:1}
+.back.focus{color:#fff;transform:scale(1.1)}
+
+/* ---------- demo-only remote legend ---------- */
+.legend{position:absolute;right:90px;bottom:30px;font-size:18px;font-weight:400;letter-spacing:.04em;color:rgba(255,255,255,.35);
+  white-space:nowrap;transition:opacity 700ms ease}
+.legend.hide{opacity:0}
+</style></head>
+<body>
+<div class="stage l0 zone-dock">
+  <img class="bg a" alt=""><img class="bg b" alt="">
+  <img class="leafbg a" alt=""><img class="leafbg b" alt="">
+  <div class="scrim"></div>
+  <div class="dim"></div>
+
+  <img class="logo" src="assets/CaveLogo.png" alt="Cave">
+  <div class="path"></div>
+
+  <div class="tagline"></div>
+
+  <div class="tiles"></div>
+
+  <div class="leaf">
+    <div class="sec k"></div>
+    <div class="name k"><span class="t"></span></div>
+    <div class="panel k"></div>
+  </div>
+  <div class="thumbs"></div>
+
+  <div class="dock">
+    <div class="pills">
+      <div class="back"><span class="chev">‹</span><span>Back</span></div>
+    </div>
+  </div>
+
+  <div class="legend">← ↑ → ↓ move · Enter select · Esc back</div>
+</div>
+
+<script>
+/* =========================================================================
+   CONTENT — the only place hotel words and photos appear. The real app
+   receives the equivalent of this object as JSON and renders it.
+   ========================================================================= */
+const CONTENT = {
+  tagline: "A hotel like no other awaits",
+  sections: [
+    { name: "Your Room",       hero: "assets/hero-room.jpg",    items: [
+      { name: "Lighting",           photo: "assets/penthouse-2.jpg" },
+      { name: "Curtains",           photo: "assets/penthouse-3.jpg" },
+      { name: "TV & AirPlay",       photo: "assets/penthouse-4.jpg" },
+      { name: "Coffee",             photo: "assets/penthouse-5.jpg" } ] },
+    { name: "Eat & Drink",     hero: "assets/hero-eat.jpg",     items: [
+      { name: "Firepit",            photo: "assets/hero-firepit.jpg" },
+      { name: "The Korean Cowgirl", photo: "assets/hero-cowgirl.jpg" },
+      { name: "The Deck",           photo: "assets/hero-deck.jpg" },
+      { name: "Room Service",       photo: "assets/hero-roomservice.jpg" } ] },
+    { name: "Pool & Wellness", hero: "assets/hero-pool.jpg",    items: [
+      { name: "Pool",               photo: "assets/hero-pool.jpg" },
+      { name: "Sauna",              photo: "assets/hero-gym.jpg" },
+      { name: "Gym",                photo: "assets/hero-gym.jpg" },
+      { name: "Treatments",         photo: "assets/hero-suite.jpg" } ] },
+    { name: "Golf",            hero: "assets/hero-golf.jpg",    items: [
+      { name: "The Course",         photo: "assets/hero-golf.jpg" },
+      { name: "Driving Range",      photo: "assets/golf-2.jpg" },
+      { name: "Tee Times",          photo: "assets/hero-golf.jpg" },
+      { name: "Coaching",           photo: "assets/golf-2.jpg" } ] },
+    { name: "What's On",       hero: "assets/hero-events.jpg",  items: [
+      { name: "This Week",          photo: "assets/hero-events.jpg" },
+      { name: "Live Music",         photo: "assets/deck-evening.jpg" },
+      { name: "Seasonal",           photo: "assets/hero-events.jpg" },
+      { name: "Offers",             photo: "assets/hero-breakfast.jpg" } ] },
+    { name: "Explore Kent",    hero: "assets/hero-explore.jpg", items: [
+      { name: "Canterbury",         photo: "assets/hero-explore.jpg" },
+      { name: "Whitstable",         photo: "assets/hero-explore.jpg" },
+      { name: "Walks",              photo: "assets/hero-hotel.jpg" },
+      { name: "Getting Around",     photo: "assets/hero-explore.jpg" } ] },
+    { name: "Contact",         hero: "assets/hero-hotel.jpg",   items: [
+      { name: "Reception",          photo: "assets/hero-hotel.jpg" },
+      { name: "Housekeeping",       photo: "assets/hero-room.jpg" },
+      { name: "Wi-Fi",              photo: "assets/penthouse-6.jpg" },
+      { name: "Check-out",          photo: "assets/hero-hotel.jpg" } ] }
+  ]
+};
+
+/* =========================================================================
+   State. Exactly one focused element at all times.
+   level 0: dock (sections)   level 1: tiles or dock   level 2: thumbs or dock
+   dock index -1 is the "‹ Back" label (levels 1 and 2 only).
+   ========================================================================= */
+const S = { level: 0, section: 0, item: 0, zone: "dock", dock: 0 };
+let gen = 0;                                    // invalidates stale cleanup timers
+
+const $ = s => document.querySelector(s);
+const stage = $(".stage"), pillsEl = $(".pills"), backEl = $(".back"), tilesEl = $(".tiles"),
+      thumbsEl = $(".thumbs"), leafEl = $(".leaf"), leafName = $(".leaf .name .t"), leafSec = $(".leaf .sec"),
+      pathEl = $(".path"), legend = $(".legend"), tagline = $(".tagline");
+const bgs = [$(".bg.a"), $(".bg.b")], leafbgs = [$(".leafbg.a"), $(".leafbg.b")];
+let bgCur = 0, leafCur = 0;
+const sec = () => CONTENT.sections[S.section];
+const el = (cls, html) => { const d = document.createElement("div"); d.className = cls; if (html) d.innerHTML = html; return d; };
+const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+
+/* ---------- build from CONTENT ---------- */
+tagline.textContent = CONTENT.tagline;
+CONTENT.sections.forEach(s => { const p = el("pill"); p.textContent = s.name; pillsEl.appendChild(p); });
+const pills = [...pillsEl.querySelectorAll(".pill")];
+CONTENT.sections.forEach(s => { new Image().src = s.hero; s.items.forEach(i => { new Image().src = i.photo; }); });
+
+/* ---------- photo layers (two each, crossfading) ---------- */
+function showBg(src) {
+  if (bgs[bgCur].dataset.src === src) return;
+  const next = bgs[1 - bgCur]; next.src = src; next.dataset.src = src;
+  next.classList.add("show"); bgs[bgCur].classList.remove("show"); bgCur = 1 - bgCur;
+}
+function showLeafBg(src) {
+  if (leafbgs[leafCur].dataset.src === src && leafbgs[leafCur].classList.contains("show")) return;
+  const next = leafbgs[1 - leafCur]; next.src = src; next.dataset.src = src;
+  next.classList.add("show"); leafbgs[leafCur].classList.remove("show"); leafCur = 1 - leafCur;
+}
+function hideLeafBg() { leafbgs.forEach(l => l.classList.remove("show")); }
+
+/* ---------- path line: logo is "Cave"; crumbs follow ---------- */
+function setPath(names) {
+  const crumbs = [...pathEl.querySelectorAll(".crumb:not(.dying)")];
+  names.forEach((n, i) => {
+    let c = crumbs[i];
+    if (!c) { c = el("crumb"); c.textContent = n; pathEl.appendChild(c); void c.offsetWidth; c.classList.add("in"); }
+    else if (c.textContent !== n) { c.classList.add("swap"); setTimeout(() => { c.textContent = n; c.classList.remove("swap"); }, 160); }
+  });
+  for (let i = names.length; i < crumbs.length; i++) { const c = crumbs[i]; c.classList.remove("in"); c.classList.add("dying"); setTimeout(() => c.remove(), 380); }
+  pathEl.querySelectorAll(".crumb:not(.dying)").forEach((c, i) => c.classList.toggle("last", i === names.length - 1));
+}
+
+/* ---------- level 1 tiles ---------- */
+function buildTiles() {
+  tilesEl.className = "tiles"; tilesEl.innerHTML = "";
+  sec().items.forEach((it, i) => {
+    const t = el("tile", `<div class="ph"><img src="${it.photo}" alt=""></div><div class="name">${esc(it.name)}</div>`);
+    t.style.setProperty("--i", i); tilesEl.appendChild(t);
+  });
+  void tilesEl.offsetWidth; tilesEl.classList.add("in");
+}
+/* ---------- level 2 thumbs ---------- */
+function buildThumbs() {
+  thumbsEl.className = "thumbs"; thumbsEl.innerHTML = "";
+  sec().items.forEach((it, i) => {
+    const t = el("thumb", `<div class="im"><img src="${it.photo}" alt=""></div>`);
+    t.style.setProperty("--i", i); thumbsEl.appendChild(t);
+  });
+  void thumbsEl.offsetWidth; thumbsEl.classList.add("in");
+}
+let nameTimer = null;
+function setLeaf(first) {
+  const it = sec().items[S.item];
+  leafSec.textContent = sec().name;
+  if (first) { leafName.textContent = it.name; void leafEl.offsetWidth; leafEl.classList.add("in"); }
+  else {
+    clearTimeout(nameTimer); leafName.classList.add("swap");
+    nameTimer = setTimeout(() => { leafName.textContent = it.name; leafName.classList.remove("swap"); }, 180);
+  }
+  showLeafBg(it.photo);
+}
+
+/* ---------- render focus state from S ---------- */
+function render() {
+  stage.className = "stage l" + S.level + " zone-" + S.zone;
+  pills.forEach((p, i) => { p.classList.toggle("focus", S.zone === "dock" && S.dock === i); p.classList.toggle("held", S.level > 0 && S.section === i); });
+  backEl.classList.toggle("focus", S.zone === "dock" && S.dock === -1);
+  [...tilesEl.children].forEach((t, i) => { t.classList.toggle("focus", S.level === 1 && S.zone === "tiles" && S.item === i); t.classList.toggle("current", S.level === 1 && S.zone === "dock" && S.item === i); });
+  [...thumbsEl.children].forEach((t, i) => { t.classList.toggle("focus", S.level === 2 && S.zone === "thumbs" && S.item === i); t.classList.toggle("current", S.level === 2 && S.zone === "dock" && S.item === i); });
+}
+function later(ms, fn) { const g = ++gen; setTimeout(() => { if (gen === g) fn(); }, ms); }
+
+/* ---------- level moves ---------- */
+function enterSection() {                       // 0 -> 1: dock recedes, tiles rise
+  S.level = 1; S.item = 0; S.zone = "tiles";
+  buildTiles(); setPath([sec().name]); render();
+}
+function openItem() {                           // 1 -> 2: tiles fall, chosen grows into the leaf
+  [...tilesEl.children].forEach((t, i) => t.classList.add(i === S.item ? "grow" : "drop"));
+  S.level = 2; S.zone = "thumbs";
+  setLeaf(true); buildThumbs(); setPath([sec().name, sec().items[S.item].name]); render();
+  later(500, () => { tilesEl.innerHTML = ""; });
+}
+function closeLeaf() {                          // 2 -> 1: leaf fades, tiles rise again
+  S.level = 1; S.zone = "tiles";
+  leafEl.classList.remove("in"); hideLeafBg(); thumbsEl.classList.remove("in");
+  buildTiles(); setPath([sec().name]); render();
+  later(450, () => { thumbsEl.innerHTML = ""; });
+}
+function goHome(section) {                      // any -> 0, with that section focused
+  if (S.level === 2) { leafEl.classList.remove("in"); hideLeafBg(); thumbsEl.classList.remove("in"); }
+  tilesEl.classList.remove("in");
+  S.level = 0; S.zone = "dock"; S.section = section; S.dock = section; S.item = 0;
+  showBg(sec().hero); setPath([]); render();
+  later(450, () => { tilesEl.innerHTML = ""; thumbsEl.innerHTML = ""; });
+}
+function back() {                               // Menu button: one level up
+  if (S.level === 0) return;
+  if (S.level === 1) goHome(S.section); else closeLeaf();
+}
+function switchLeaf() {                         // Left/Right along the thumbs
+  setLeaf(false); setPath([sec().name, sec().items[S.item].name]); render();
+}
+function pulse() {
+  const im = thumbsEl.children[S.item] && thumbsEl.children[S.item].querySelector(".im");
+  if (!im) return; im.classList.remove("pulse"); void im.offsetWidth; im.classList.add("pulse");
+}
+
+/* ---------- keys = the Siri Remote ---------- */
+function handle(k) {
+  const n = CONTENT.sections.length, m = sec().items.length;
+  const enter = k === "Enter" || k === " ";
+  if (k === "Home") { if (S.level > 0) goHome(S.section); return; }
+  if (k === "Escape" || k === "Backspace") { back(); return; }
+
+  if (S.zone === "dock") {
+    if (k === "ArrowLeft")       { const min = S.level > 0 ? -1 : 0; if (S.dock > min) { S.dock--; dockMoved(); } }
+    else if (k === "ArrowRight") { if (S.dock < n - 1) { S.dock++; dockMoved(); } }
+    else if (k === "ArrowUp")    { if (S.level === 1) S.zone = "tiles"; else if (S.level === 2) S.zone = "thumbs"; render(); }
+    else if (enter)              { if (S.level === 0) enterSection(); else if (S.dock === -1) back(); else goHome(S.dock); }
+  } else if (S.zone === "tiles") {
+    if (k === "ArrowLeft")       { if (S.item > 0) { S.item--; render(); } }
+    else if (k === "ArrowRight") { if (S.item < m - 1) { S.item++; render(); } }
+    else if (k === "ArrowDown")  { S.zone = "dock"; S.dock = S.section; render(); }
+    else if (enter)              { openItem(); }
+  } else if (S.zone === "thumbs") {
+    if (k === "ArrowLeft")       { if (S.item > 0) { S.item--; switchLeaf(); } }
+    else if (k === "ArrowRight") { if (S.item < m - 1) { S.item++; switchLeaf(); } }
+    else if (k === "ArrowDown")  { S.zone = "dock"; S.dock = S.section; render(); }
+    else if (enter)              { pulse(); }
+  }
+}
+function dockMoved() {
+  if (S.level === 0) { S.section = S.dock; showBg(sec().hero); }
+  render();
+}
+const KEYS = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " ", "Escape", "Backspace", "Home"];
+addEventListener("keydown", e => {
+  if (!KEYS.includes(e.key)) return;
+  e.preventDefault(); touched(); handle(e.key);
+});
+
+/* ---------- legend: gone after 6s of use, back after 8s idle ---------- */
+let useT = null, idleT = null;
+function touched() {
+  clearTimeout(idleT);
+  idleT = setTimeout(() => { legend.classList.remove("hide"); useT = null; }, 8000);
+  if (!useT) useT = setTimeout(() => legend.classList.add("hide"), 6000);
+}
+
+/* ---------- start ---------- */
+showBg(sec().hero); render();
+</script>
+<script src="remote-bridge.js"></script>
+</body></html>

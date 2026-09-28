@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Cave TV · Demo player</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600&family=Inter:wght@300;400;500&display=swap">
+<style>
+:root{--gold:#b7996d;--ink:#050505}
+html,body{margin:0;height:100%;background:var(--ink);color:#fff;font-family:Inter,sans-serif;overflow:hidden;-webkit-user-select:none;user-select:none}
+#wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;gap:24px;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);box-sizing:border-box}
+#stageBox{position:relative;flex:1 1 auto;height:100%;display:flex;align-items:center;justify-content:center;min-width:0;min-height:0}
+#stage{position:relative;width:1920px;height:1080px;transform-origin:0 0;flex:none;box-shadow:0 0 0 1px rgba(183,153,109,.25)}
+#stage iframe{width:1920px;height:1080px;border:0;display:block;background:var(--ink)}
+#remoteBox{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:10px}
+#remote{touch-action:none;display:block}
+#remote .btn{cursor:pointer}
+#remote .flash{opacity:0;transition:opacity .12s}
+#remote .flash.on{opacity:1;transition:none}
+#hint{font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:rgba(255,255,255,.35);text-align:center;max-width:190px;line-height:1.6}
+#top{position:fixed;top:calc(env(safe-area-inset-top) + 10px);left:calc(env(safe-area-inset-left) + 14px);display:flex;gap:14px;align-items:center;z-index:5}
+#top a,#top button{font:500 11px/1 Inter,sans-serif;letter-spacing:2px;text-transform:uppercase;color:var(--gold);background:rgba(5,5,5,.6);border:1px solid rgba(183,153,109,.4);border-radius:999px;padding:8px 14px;text-decoration:none;cursor:pointer}
+/* landscape: stage left, remote right */
+@media (orientation:landscape){
+  #wrap{flex-direction:row;padding-left:calc(env(safe-area-inset-left) + 16px);padding-right:calc(env(safe-area-inset-right) + 16px)}
+  #remote{height:min(92vh,560px);width:auto}
+}
+/* portrait: stage on top, remote below */
+@media (orientation:portrait){
+  #wrap{flex-direction:column;padding:calc(env(safe-area-inset-top) + 56px) 12px calc(env(safe-area-inset-bottom) + 12px)}
+  #stageBox{flex:0 0 auto;width:100%;height:auto}
+  #remoteBox{flex:1 1 auto;min-height:0;justify-content:center}
+  #remote{height:100%;max-height:440px;width:auto}
+}
+body.noremote #remoteBox{display:none}
+</style>
+</head>
+<body>
+<div id="top">
+  <a href="index.html">‹ Demos</a>
+  <button id="toggle" type="button">Hide remote</button>
+</div>
+<div id="wrap">
+  <div id="stageBox"><div id="stage"><iframe id="demo" title="Cave TV demo" allow="autoplay"></iframe></div></div>
+  <div id="remoteBox">
+    <svg id="remote" viewBox="0 0 150 420" xmlns="http://www.w3.org/2000/svg" aria-label="Siri Remote">
+      <defs>
+        <radialGradient id="pad" cx="50%" cy="45%" r="60%"><stop offset="0" stop-color="#1a1712"/><stop offset="1" stop-color="#0b0a08"/></radialGradient>
+      </defs>
+      <!-- body -->
+      <rect x="8" y="8" width="134" height="404" rx="26" fill="rgba(255,255,255,0.035)" stroke="#b7996d" stroke-opacity=".8" stroke-width="1.4"/>
+      <!-- clickpad -->
+      <g id="clickpad" class="btn">
+        <circle cx="75" cy="86" r="54" fill="url(#pad)" stroke="#b7996d" stroke-opacity=".9" stroke-width="1.4"/>
+        <circle cx="75" cy="86" r="22" fill="rgba(255,255,255,0.03)" stroke="#b7996d" stroke-opacity=".55" stroke-width="1"/>
+        <!-- flashes -->
+        <path class="flash" data-k="ArrowUp" d="M75 32 A54 54 0 0 1 116 62 L96 76 A22 22 0 0 0 75 64 Z" fill="#b7996d" fill-opacity=".35" transform="rotate(-45 75 86)"/>
+        <path class="flash" data-k="ArrowRight" d="M75 32 A54 54 0 0 1 116 62 L96 76 A22 22 0 0 0 75 64 Z" fill="#b7996d" fill-opacity=".35" transform="rotate(45 75 86)"/>
+        <path class="flash" data-k="ArrowDown" d="M75 32 A54 54 0 0 1 116 62 L96 76 A22 22 0 0 0 75 64 Z" fill="#b7996d" fill-opacity=".35" transform="rotate(135 75 86)"/>
+        <path class="flash" data-k="ArrowLeft" d="M75 32 A54 54 0 0 1 116 62 L96 76 A22 22 0 0 0 75 64 Z" fill="#b7996d" fill-opacity=".35" transform="rotate(225 75 86)"/>
+        <circle class="flash" data-k="Enter" cx="75" cy="86" r="22" fill="#b7996d" fill-opacity=".45"/>
+        <!-- chevrons -->
+        <g stroke="#b7996d" stroke-opacity=".8" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M70 46 l5 -5 l5 5"/>
+          <path d="M70 126 l5 5 l5 -5"/>
+          <path d="M35 81 l-5 5 l5 5"/>
+          <path d="M115 81 l5 5 l-5 5"/>
+        </g>
+      </g>
+      <!-- back + tv -->
+      <g id="back" class="btn" data-k="Escape">
+        <circle cx="48" cy="172" r="17" fill="rgba(255,255,255,0.03)" stroke="#b7996d" stroke-opacity=".8" stroke-width="1.2"/>
+        <circle class="flash" data-k="Escape" cx="48" cy="172" r="17" fill="#b7996d" fill-opacity=".45"/>
+        <path d="M52 164 l-8 8 l8 8" stroke="#b7996d" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+      <g id="tv" class="btn" data-k="Home">
+        <circle cx="102" cy="172" r="17" fill="rgba(255,255,255,0.03)" stroke="#b7996d" stroke-opacity=".8" stroke-width="1.2"/>
+        <circle class="flash" data-k="Home" cx="102" cy="172" r="17" fill="#b7996d" fill-opacity=".45"/>
+        <rect x="93" y="165" width="18" height="12" rx="2" stroke="#b7996d" stroke-width="1.6" fill="none"/>
+        <path d="M98 180 h8" stroke="#b7996d" stroke-width="1.6" stroke-linecap="round"/>
+      </g>
+      <!-- decorative: play/pause, mute, volume, power, siri -->
+      <g stroke="#b7996d" stroke-opacity=".35" stroke-width="1.2" fill="none">
+        <circle cx="48" cy="222" r="17"/>
+        <path d="M43 216 l10 6 l-10 6 z" fill="#b7996d" fill-opacity=".35" stroke="none"/>
+        <circle cx="102" cy="222" r="17"/>
+        <path d="M96 218 h4 l5 -4 v16 l-5 -4 h-4 z" fill="#b7996d" fill-opacity=".35" stroke="none"/>
+        <rect x="85" y="252" width="34" height="86" rx="17"/>
+        <path d="M102 268 v10 M97 273 h10 M97 322 h10" stroke-linecap="round"/>
+        <circle cx="48" cy="270" r="17"/>
+        <path d="M48 262 v8 M42 266 a8 8 0 1 0 12 0" stroke-linecap="round"/>
+        <circle cx="48" cy="320" r="17"/>
+        <path d="M41 320 q3 -6 7 0 t7 0" stroke-linecap="round"/>
+      </g>
+      <text x="48" y="200" text-anchor="middle" font-family="Inter,sans-serif" font-size="6.5" letter-spacing="1.5" fill="#b7996d" fill-opacity=".7">MENU</text>
+      <text x="102" y="200" text-anchor="middle" font-family="Inter,sans-serif" font-size="6.5" letter-spacing="1.5" fill="#b7996d" fill-opacity=".7">TV</text>
+    </svg>
+    <div id="hint">Swipe or tap the pad · tap centre to select · Menu goes back</div>
+  </div>
+</div>
+<script>
+(function(){
+  const params = new URLSearchParams(location.search);
+  const demo = (params.get('demo') || '01-marquee').replace(/[^a-z0-9-]/gi,'');
+  const frame = document.getElementById('demo');
+  frame.src = demo + '.html';
+  document.title = 'Cave TV · ' + demo;
+
+  // --- scale the 1920x1080 stage to fit its box
+  const stage = document.getElementById('stage'), box = document.getElementById('stageBox');
+  function fit(){
+    const portrait = matchMedia('(orientation:portrait)').matches;
+    let w = box.clientWidth, h = box.clientHeight;
+    if (portrait) { h = Math.min(window.innerHeight * 0.5, w * 9/16); }
+    const s = Math.min(w/1920, h/1080);
+    stage.style.transform = 'scale(' + s + ')';
+    stage.style.width = '1920px'; stage.style.height = '1080px';
+    stage.style.marginRight = (1920*s - 1920) + 'px';
+    stage.style.marginBottom = (1080*s - 1080) + 'px';
+  }
+  addEventListener('resize', fit); addEventListener('orientationchange', () => setTimeout(fit, 80)); fit();
+
+  // --- send keys into the demo
+  function send(key){
+    try { frame.contentWindow.postMessage({caveKey:key}, '*'); } catch(e){}
+    flash(key);
+  }
+  function flash(key){
+    document.querySelectorAll('#remote .flash[data-k="'+key+'"]').forEach(el => { el.classList.add('on'); setTimeout(()=>el.classList.remove('on'), 160); });
+  }
+  // hardware keyboard while the player has focus
+  const KEYS = {ArrowUp:1,ArrowDown:1,ArrowLeft:1,ArrowRight:1,Enter:1,Escape:1,Backspace:1,Home:1,' ':1};
+  addEventListener('keydown', e => {
+    if (!KEYS[e.key]) return;
+    e.preventDefault();
+    send(e.key === 'Backspace' ? 'Escape' : e.key === ' ' ? 'Enter' : e.key);
+  });
+
+  // --- clickpad: tap zones + swipe
+  const pad = document.getElementById('clickpad');
+  const svg = document.getElementById('remote');
+  let start = null;
+  function toSvg(ev){
+    const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY;
+    return pt.matrixTransform(svg.getScreenCTM().inverse());
+  }
+  pad.addEventListener('pointerdown', ev => { ev.preventDefault(); pad.setPointerCapture(ev.pointerId); start = toSvg(ev); });
+  pad.addEventListener('pointerup', ev => {
+    if (!start) return; ev.preventDefault();
+    const end = toSvg(ev); const dx = end.x - start.x, dy = end.y - start.y; const dist = Math.hypot(dx,dy);
+    let key;
+    if (dist > 12) { key = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'ArrowRight' : 'ArrowLeft') : (dy > 0 ? 'ArrowDown' : 'ArrowUp'); }
+    else {
+      const rx = start.x - 75, ry = start.y - 86, r = Math.hypot(rx, ry);
+      if (r <= 24) key = 'Enter';
+      else key = Math.abs(rx) > Math.abs(ry) ? (rx > 0 ? 'ArrowRight' : 'ArrowLeft') : (ry > 0 ? 'ArrowDown' : 'ArrowUp');
+    }
+    start = null; send(key);
+  });
+  pad.addEventListener('pointercancel', () => { start = null; });
+  // buttons
+  ['back','tv'].forEach(id => {
+    const g = document.getElementById(id);
+    g.addEventListener('pointerdown', ev => { ev.preventDefault(); });
+    g.addEventListener('pointerup', ev => { ev.preventDefault(); send(g.dataset.k); });
+  });
+  // toggle
+  const t = document.getElementById('toggle');
+  t.addEventListener('click', () => { document.body.classList.toggle('noremote'); t.textContent = document.body.classList.contains('noremote') ? 'Show remote' : 'Hide remote'; setTimeout(fit, 30); });
+  // keep keyboard focus useful on desktop
+  frame.addEventListener('load', () => { try { frame.contentWindow.focus(); } catch(e){} fit(); });
+})();
+</script>
+</body>
+</html>

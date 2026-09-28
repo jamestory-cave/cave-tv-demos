@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Cave TV · Interactive demos · Round 3</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600&family=Inter:wght@300;400;500&display=swap">
+<style>
+body{margin:0;background:#0a0a0a;color:#fff;font-family:Inter,sans-serif;min-height:100vh}
+header{padding:56px 64px 24px}
+h1{font-family:Cinzel,serif;font-weight:400;letter-spacing:6px;text-transform:uppercase;font-size:34px;margin:0 0 10px;color:#b7996d}
+p{max-width:900px;color:rgba(255,255,255,.65);font-weight:300;line-height:1.55;margin:0 0 8px}
+.keys{font-size:14px;color:rgba(255,255,255,.45);letter-spacing:1px;margin-top:14px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:28px;padding:24px 64px 64px;max-width:1500px}
+a.card{display:block;text-decoration:none;color:#fff;border:1px solid rgba(183,153,109,.3);background:#000;overflow:hidden;transition:border-color .2s,transform .2s}
+a.card:hover{border-color:#b7996d;transform:translateY(-3px)}
+.frame{position:relative;aspect-ratio:16/9;overflow:hidden}
+.frame iframe{position:absolute;top:0;left:0;width:1920px;height:1080px;border:0;transform-origin:0 0;pointer-events:none}
+.cap{padding:16px 20px;display:flex;justify-content:space-between;align-items:baseline}
+.cap b{font-family:Cinzel,serif;font-weight:400;letter-spacing:3px;text-transform:uppercase;font-size:18px}
+.cap b span{color:#b7996d;margin-right:12px}
+.cap i{font-style:normal;font-size:12px;color:rgba(255,255,255,.4);letter-spacing:1px;text-transform:uppercase}
+</style></head><body>
+<header><h1>Cave TV · Interactive demos</h1>
+<p>Four navigation models built as working demos. Same content in each, two levels deep, with the way back shown on screen at every level. Click a demo to open it full screen, then drive it with the keyboard as if it were the Siri Remote.</p>
+<p class="keys">← ↑ → ↓ move &nbsp;·&nbsp; Enter select &nbsp;·&nbsp; Esc back &nbsp;·&nbsp; Home key returns to the start &nbsp;·&nbsp; on a phone or iPad an on-screen Siri Remote appears beside the demo</p>
+</header>
+<div class="grid">
+<a class="card" href="player.html?demo=01-marquee"><div class="frame"><iframe src="01-marquee.html" loading="lazy" title="Marquee"></iframe></div><div class="cap"><b><span>01</span>Marquee</b><i>Vertical words · photo follows</i></div></a>
+<a class="card" href="player.html?demo=10-index"><div class="frame"><iframe src="10-index.html" loading="lazy" title="Index"></iframe></div><div class="cap"><b><span>10</span>Index</b><i>Numbered list · carousel below</i></div></a>
+<a class="card" href="player.html?demo=03-strips"><div class="frame"><iframe src="03-strips.html" loading="lazy" title="Strips"></iframe></div><div class="cap"><b><span>03</span>Strips</b><i>Accordion of photo strips</i></div></a>
+<a class="card" href="player.html?demo=06-dock"><div class="frame"><iframe src="06-dock.html" loading="lazy" title="Dock"></iframe></div><div class="cap"><b><span>06</span>Dock</b><i>Full-bleed photo · bottom dock</i></div></a>
+</div>
+<script>
+function fit(){document.querySelectorAll('.frame').forEach(f=>{const s=f.clientWidth/1920;f.querySelector('iframe').style.transform='scale('+s+')';});}
+addEventListener('resize',fit);fit();
+</script></body></html>

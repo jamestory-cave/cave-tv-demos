@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>10 Index · Cave TV demo</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Inter:wght@300;400;500&display=swap">
+<style>
+html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:#050505}
+body{color:#fff;font-family:Inter,sans-serif;-webkit-font-smoothing:antialiased;user-select:none}
+:root{
+  --gold:#b7996d;
+  --focus:200ms cubic-bezier(.2,.8,.2,1);      /* focus moves: gentle ease-out */
+  --level:400ms cubic-bezier(.22,.61,.36,1);   /* level transitions */
+}
+.stage{position:absolute;left:0;top:0;width:1920px;height:1080px;overflow:hidden;background:#050505}
+.cz{font-family:Cinzel,serif}
+
+/* ---------- chrome: logo, tagline, path line, back ---------- */
+.logo{position:absolute;left:90px;top:60px;height:46px;z-index:40}
+.tagline{position:absolute;right:90px;top:950px;font-family:Cinzel,serif;font-size:22px;letter-spacing:.3em;text-transform:uppercase;color:var(--gold);transition:opacity 320ms ease;z-index:5}
+.stage.l1 .tagline,.stage.l2 .tagline{opacity:0}
+
+.path{position:absolute;left:90px;top:138px;display:flex;align-items:baseline;font-size:22px;letter-spacing:.08em;color:rgba(183,153,109,.6);white-space:nowrap;z-index:40}
+.seg{display:inline-flex;align-items:baseline;opacity:0;transform:translateX(-14px);transition:opacity 300ms ease,transform 300ms cubic-bezier(.2,.8,.2,1),color 300ms ease}
+.seg.in{opacity:1;transform:none}
+.seg.cur{color:#fff}
+.seg .sep{color:rgba(183,153,109,.4);margin:0 14px}
+
+.back{position:absolute;left:90px;top:190px;display:flex;align-items:center;font-size:24px;color:rgba(183,153,109,.6);opacity:0;transform:translateX(-14px);transition:opacity 300ms ease,transform 300ms cubic-bezier(.2,.8,.2,1),color 200ms ease;z-index:40}
+.back .chev{font-size:34px;line-height:24px;margin-right:12px;position:relative;top:-3px}
+.stage.l1 .back,.stage.l2 .back{opacity:1;transform:none;transition-delay:60ms}
+.stage.hint .back{color:var(--gold)}
+
+/* ---------- level 0: numbered list + framed photo ---------- */
+.list{position:absolute;left:90px;top:186px;transform-origin:0 0;transition:transform var(--level),opacity 300ms ease;z-index:10;will-change:transform}
+.line{display:flex;align-items:baseline;height:106px;opacity:0;transform:translateY(16px);transition:opacity 500ms ease,transform 500ms cubic-bezier(.2,.8,.2,1)}
+.stage.ready .line{opacity:1;transform:none;transition-delay:calc(var(--i)*40ms)}
+.line .n{font-size:22px;letter-spacing:.14em;color:var(--gold);width:84px;flex:none;opacity:.55;transition:opacity var(--focus)}
+.line .t{font-family:Cinzel,serif;font-size:54px;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.4);white-space:nowrap;position:relative;padding-bottom:8px;line-height:1;transform-origin:0 72%;transition:transform var(--focus),color var(--focus)}
+.line .t::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1px;background:var(--gold);transform:scaleX(0);transform-origin:0 0;transition:transform 260ms cubic-bezier(.2,.8,.2,1)}
+.line.focus .n{opacity:1}
+.line.focus .t{color:#fff;transform:scale(1.12)}
+.line.focus .t::after{transform:scaleX(1)}
+.stage.l1 .list,.stage.l2 .list{transform:translate(0,64px) scale(.45);opacity:0}
+
+.hframe{position:absolute;left:1010px;top:170px;width:820px;height:740px;box-sizing:border-box;padding:16px;border:1px solid var(--gold);opacity:0;transform:scale(.97);transition:transform var(--level),opacity 320ms ease;z-index:5}
+.stage.ready .hframe{opacity:1;transform:none;transition:transform 700ms cubic-bezier(.2,.8,.2,1),opacity 700ms ease;transition-delay:180ms}
+.hframe .ph{position:relative;width:100%;height:100%;overflow:hidden;background:#000}
+.hframe img{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 500ms ease;will-change:transform}
+.hframe img.on{opacity:.85}
+.stage.l1 .hframe,.stage.l2 .hframe{opacity:0;transform:scale(.96);transition:transform var(--level),opacity 320ms ease}
+
+/* ---------- receded parents: compact columns at far left ---------- */
+.rail{position:absolute;left:90px;top:250px;z-index:30}
+.col{opacity:0;transition:opacity 320ms ease}
+.col .row{display:flex;align-items:baseline;height:48px}
+.col .n{font-size:12px;letter-spacing:.2em;color:var(--gold);width:36px;flex:none;opacity:.7}
+.col .t{font-family:Cinzel,serif;font-size:24px;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.35);white-space:nowrap;line-height:1;transition:color 300ms ease}
+.col .row.sel .t{color:#fff}
+.stage.l1 .col.sections,.stage.l2 .col.sections{opacity:1;transition-delay:140ms}
+.col.items{margin-top:34px;padding-left:40px}
+.col.items .row{opacity:0;transform:translateY(10px);transition:opacity 180ms ease,transform 180ms cubic-bezier(.2,.8,.2,1)}
+.stage.l2 .col.items{opacity:1}
+.stage.l2 .col.items .row{opacity:1;transform:none;transition-duration:340ms;transition-delay:calc(220ms + var(--i)*35ms)}
+
+/* ---------- level 1: carousel of framed cards ---------- */
+.car{position:absolute;left:420px;top:220px;width:1500px;height:700px;z-index:10;opacity:0;transform:translateX(60px);
+  transition:opacity 350ms ease,transform 350ms cubic-bezier(.22,.61,.36,1);
+  -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 150px,#000 calc(100% - 60px),transparent 100%);
+  mask-image:linear-gradient(90deg,transparent 0,#000 150px,#000 calc(100% - 60px),transparent 100%)}
+.stage.l1 .car,.stage.l2 .car{opacity:1;transform:none;transition:opacity 350ms ease,transform 0ms}
+.car.notrans,.car.notrans *{transition:none!important}
+.track{position:absolute;left:0;top:0;height:100%;transition:transform 300ms cubic-bezier(.22,.61,.36,1);will-change:transform}
+.card{position:absolute;top:0;width:798px;height:700px;opacity:0;z-index:1;transform:translateX(80px);transition:opacity 420ms ease,transform 420ms cubic-bezier(.22,.61,.36,1);transition-delay:var(--d)}
+.car.in .card{opacity:1;transform:none}
+.car.leaf .card{transition-delay:0ms;transition-duration:300ms}
+.car.leaf .card:not(.focus){opacity:0}
+.ci{position:absolute;left:0;top:0;width:100%;height:100%;transform:scale(.8);opacity:.42;transform-origin:50% 56%;transition:transform 220ms cubic-bezier(.2,.8,.2,1),opacity 220ms ease;will-change:transform}
+.card.focus{z-index:2}
+.card.focus .ci{transform:none;opacity:1}
+.cnum{position:absolute;left:0;right:0;top:56px;text-align:center;font-size:14px;letter-spacing:.35em;color:var(--gold);transition:opacity 250ms ease}
+.frame{position:absolute;left:0;top:100px;width:798px;height:462px;box-sizing:border-box;padding:14px;border:1px solid var(--gold);transition:border-color 250ms ease}
+.frame::after{content:"";position:absolute;left:-1px;top:-1px;right:-1px;bottom:-1px;box-shadow:0 0 0 1px rgba(183,153,109,.95),0 0 70px rgba(183,153,109,.22),0 40px 100px rgba(0,0,0,.6);opacity:0;transition:opacity 220ms ease}
+.card.focus .frame::after{opacity:1}
+.frame .ph{position:relative;width:100%;height:100%;overflow:hidden;background:#000}
+.frame img{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:cover;display:block;will-change:transform}
+.cname{position:absolute;left:0;right:0;top:604px;text-align:center;font-family:Cinzel,serif;font-size:36px;letter-spacing:.12em;text-transform:uppercase;color:#fff;white-space:nowrap;line-height:1;transition:opacity 250ms ease}
+.car.leaf .card.focus .frame{border-color:transparent}
+.car.leaf .card.focus .frame::after,.car.leaf .card.focus .cnum,.car.leaf .card.focus .cname{opacity:0}
+
+/* ---------- level 2: the leaf, expanding in place from the focused card ---------- */
+.leaf{position:absolute;left:0;top:0;width:1920px;height:1080px;transform-origin:0 0;z-index:20;opacity:0;visibility:hidden;
+  transition:transform 420ms cubic-bezier(.22,.61,.36,1),opacity 0ms linear 420ms,visibility 0ms linear 420ms;will-change:transform}
+.leaf.open{opacity:1;visibility:visible;transition:transform 420ms cubic-bezier(.22,.61,.36,1),opacity 0ms,visibility 0ms}
+.leaf.dissolve{transition:opacity 380ms ease,visibility 0ms linear 380ms}   /* Home key from level 2: crossfade, no shrink */
+.leaf .ph{position:absolute;left:0;top:0;width:100%;height:100%;overflow:hidden;background:#000}
+.leaf img{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:cover;display:block;will-change:transform}
+.leaf .scrim{position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;transition:opacity 420ms ease;
+  background:linear-gradient(90deg,rgba(5,5,5,.96) 0,rgba(5,5,5,.78) 480px,rgba(5,5,5,.38) 1100px,rgba(5,5,5,.3) 100%)}
+.leaf .scrim2{position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;transition:opacity 420ms ease;
+  background:linear-gradient(180deg,rgba(5,5,5,.35) 0,rgba(5,5,5,0) 300px,rgba(5,5,5,0) 55%,rgba(5,5,5,.72) 100%)}
+.leaf.open .scrim,.leaf.open .scrim2{opacity:1}
+
+.ltext{position:absolute;left:560px;bottom:140px;width:1270px;z-index:25;display:flex;flex-direction:column;align-items:flex-start}
+.ltext>*{opacity:0;transform:translateY(18px);transition:opacity 160ms ease,transform 160ms cubic-bezier(.2,.8,.2,1)}
+.stage.l2 .ltext>*{opacity:1;transform:none;transition-duration:420ms}
+.stage.l2 .lsec{transition-delay:220ms}
+.stage.l2 .lname{transition-delay:280ms}
+.stage.l2 .lpanel{transition-delay:360ms}
+.lsec{font-size:24px;letter-spacing:.35em;text-transform:uppercase;color:var(--gold);margin-bottom:20px}
+.lname{font-family:Cinzel,serif;font-size:96px;letter-spacing:.08em;text-transform:uppercase;line-height:1.05;color:#fff;max-width:1270px;margin-bottom:44px}
+.lpanel{width:900px;height:180px;box-sizing:border-box;border:1px solid rgba(183,153,109,.6)}
+
+/* ---------- demo-only remote legend ---------- */
+.legend{position:absolute;right:90px;bottom:44px;font-size:18px;letter-spacing:.04em;color:rgba(255,255,255,.35);transition:opacity 700ms ease;z-index:40}
+.legend.off{opacity:0}
+</style></head>
+<body>
+<div class="stage" id="stage">
+  <img class="logo" id="logo" alt="">
+  <div class="path" id="path"></div>
+  <div class="back" id="back"><span class="chev">‹</span><span>Back</span></div>
+
+  <div class="list cz" id="list"></div>
+  <div class="hframe" id="hframe"><div class="ph"><img id="homeA" alt=""><img id="homeB" alt=""></div></div>
+  <div class="tagline" id="tagline"></div>
+
+  <div class="rail" id="rail">
+    <div class="col sections" id="colSections"></div>
+    <div class="col items" id="colItems"></div>
+  </div>
+
+  <div class="car" id="car"><div class="track" id="track"></div></div>
+
+  <div class="leaf" id="leaf"><div class="ph"><img id="leafImg" alt=""><div class="scrim"></div><div class="scrim2"></div></div></div>
+  <div class="ltext" id="ltext"><div class="lsec" id="lsec"></div><div class="lname" id="lname"></div><div class="lpanel"></div></div>
+
+  <div class="legend" id="legend">← ↑ → ↓ move &nbsp;·&nbsp; Enter select &nbsp;·&nbsp; Esc back</div>
+</div>
+
+<script>
+/* ============================================================
+   CONTENT — the only place hotel words and photos live.
+   The real app renders content.json exactly like this.
+   ============================================================ */
+const CONTENT = {
+  logo: 'assets/CaveLogo.png',
+  tagline: 'A hotel like no other awaits',
+  sections: [
+    { name: 'Your Room', image: 'assets/hero-room.jpg', items: [
+      { name: 'Lighting',     image: 'assets/penthouse-2.jpg' },
+      { name: 'Curtains',     image: 'assets/penthouse-3.jpg' },
+      { name: 'TV & AirPlay', image: 'assets/penthouse-4.jpg' },
+      { name: 'Coffee',       image: 'assets/penthouse-5.jpg' } ] },
+    { name: 'Eat & Drink', image: 'assets/hero-eat.jpg', items: [
+      { name: 'Firepit',            image: 'assets/hero-firepit.jpg' },
+      { name: 'The Korean Cowgirl', image: 'assets/hero-cowgirl.jpg' },
+      { name: 'The Deck',           image: 'assets/hero-deck.jpg' },
+      { name: 'Room Service',       image: 'assets/hero-roomservice.jpg' } ] },
+    { name: 'Pool & Wellness', image: 'assets/hero-pool.jpg', items: [
+      { name: 'Pool',       image: 'assets/hero-pool.jpg' },
+      { name: 'Sauna',      image: 'assets/hero-gym.jpg' },
+      { name: 'Gym',        image: 'assets/hero-gym.jpg' },
+      { name: 'Treatments', image: 'assets/hero-suite.jpg' } ] },
+    { name: 'Golf', image: 'assets/hero-golf.jpg', items: [
+      { name: 'The Course',    image: 'assets/hero-golf.jpg' },
+      { name: 'Driving Range', image: 'assets/golf-2.jpg' },
+      { name: 'Tee Times',     image: 'assets/hero-golf.jpg' },
+      { name: 'Coaching',      image: 'assets/golf-2.jpg' } ] },
+    { name: "What's On", image: 'assets/hero-events.jpg', items: [
+      { name: 'This Week',  image: 'assets/hero-events.jpg' },
+      { name: 'Live Music', image: 'assets/deck-evening.jpg' },
+      { name: 'Seasonal',   image: 'assets/hero-events.jpg' },
+      { name: 'Offers',     image: 'assets/hero-breakfast.jpg' } ] },
+    { name: 'Explore Kent', image: 'assets/hero-explore.jpg', items: [
+      { name: 'Canterbury',     image: 'assets/hero-explore.jpg' },
+      { name: 'Whitstable',     image: 'assets/hero-explore.jpg' },
+      { name: 'Walks',          image: 'assets/hero-hotel.jpg' },
+      { name: 'Getting Around', image: 'assets/hero-explore.jpg' } ] },
+    { name: 'Contact', image: 'assets/hero-hotel.jpg', items: [
+      { name: 'Reception',    image: 'assets/hero-hotel.jpg' },
+      { name: 'Housekeeping', image: 'assets/hero-room.jpg' },
+      { name: 'Wi-Fi',        image: 'assets/penthouse-6.jpg' },
+      { name: 'Check-out',    image: 'assets/hero-hotel.jpg' } ] }
+  ]
+};
+
+/* ============================================================
+   Layout constants (carousel geometry)
+   ============================================================ */
+const CARD_W = 798, CARD_STEP = 800, VIEW_W = 1500;
+const CARD_X0 = VIEW_W / 2 - CARD_W / 2;   // focused card is always centred in the viewport
+const LEVEL_LOCK = 420;                     // ms: ignore keys while a level transition plays
+
+/* ============================================================
+   DOM
+   ============================================================ */
+const $ = id => document.getElementById(id);
+const stage = $('stage'), list = $('list'), path = $('path'), car = $('car'), track = $('track');
+const leaf = $('leaf'), leafImg = $('leafImg'), lsec = $('lsec'), lname = $('lname');
+const colSections = $('colSections'), colItems = $('colItems'), legend = $('legend');
+const homeImgs = [$('homeA'), $('homeB')];
+let homeCur = 0;
+
+const pad = n => String(n).padStart(2, '0');
+const el = (cls, parent) => { const d = document.createElement('div'); d.className = cls; parent.appendChild(d); return d; };
+
+/* ============================================================
+   Ken Burns via the Web Animations API, so a photo can hand its
+   current scale to another element (card -> leaf -> card) with no seam.
+   ============================================================ */
+const KB_MAX = 1.06, KB_DUR = 12000, KB_EASE = 'cubic-bezier(.45,0,.55,1)';
+function scaleOf(node) {
+  const t = getComputedStyle(node).transform;
+  return (!t || t === 'none') ? 1 : new DOMMatrix(t).a;
+}
+function stopAnims(node) { node.getAnimations().forEach(a => a.cancel()); }
+function kenBurns(node, from = 1) {
+  stopAnims(node); node.style.transform = '';
+  const loop = () => node.animate(
+    [{ transform: `scale(${KB_MAX})` }, { transform: 'scale(1)' }],
+    { duration: KB_DUR, easing: KB_EASE, direction: 'alternate', iterations: Infinity });
+  const first = node.animate(
+    [{ transform: `scale(${from})` }, { transform: `scale(${KB_MAX})` }],
+    { duration: Math.max(1, KB_DUR * (KB_MAX - from) / (KB_MAX - 1)), easing: KB_EASE, fill: 'forwards' });
+  first.onfinish = () => { loop(); first.cancel(); };
+}
+/* freeze a photo at its current scale (returns it) */
+function holdScale(node) { const s = scaleOf(node); stopAnims(node); node.style.transform = `scale(${s})`; return s; }
+/* ease a photo from its current scale back to rest */
+function settle(node) {
+  const s = scaleOf(node); stopAnims(node); node.style.transform = '';
+  if (s !== 1) node.animate([{ transform: `scale(${s})` }, { transform: 'scale(1)' }], { duration: 500, easing: 'ease-out' });
+}
+
+/* ============================================================
+   Render from CONTENT
+   ============================================================ */
+$('logo').src = CONTENT.logo;
+$('tagline').textContent = CONTENT.tagline;
+
+CONTENT.sections.forEach((sec, k) => {
+  const line = el('line', list); line.style.setProperty('--i', k);
+  el('n', line).textContent = pad(k + 1);
+  el('t', line).textContent = sec.name;
+  const row = el('row', colSections);
+  el('n', row).textContent = pad(k + 1);
+  el('t', row).textContent = sec.name;
+});
+
+function buildItems(sec) {
+  track.innerHTML = ''; colItems.innerHTML = '';
+  sec.items.forEach((it, k) => {
+    const card = el('card', track);
+    card.style.left = (CARD_X0 + k * CARD_STEP) + 'px';
+    card.style.setProperty('--d', (k * 38) + 'ms');
+    const ci = el('ci', card);
+    el('cnum', ci).textContent = pad(k + 1);
+    const frame = el('frame', ci), ph = el('ph', frame);
+    const img = document.createElement('img'); img.alt = ''; img.src = it.image; ph.appendChild(img);
+    el('cname', ci).textContent = it.name;
+    const row = el('row', colItems); row.style.setProperty('--i', k);
+    el('n', row).textContent = pad(k + 1);
+    el('t', row).textContent = it.name;
+  });
+}
+
+/* preload every photo so crossfades never show a blank */
+[...new Set(CONTENT.sections.flatMap(s => [s.image, ...s.items.map(i => i.image)]))].forEach(src => { const i = new Image(); i.src = src; });
+
+/* ============================================================
+   Path line: Cave › Section › Item, animated per segment
+   ============================================================ */
+function setPath(names) {
+  const segs = [...path.querySelectorAll('.seg:not(.out)')];
+  for (let k = names.length; k < segs.length; k++) {
+    const s = segs[k]; s.classList.add('out'); s.classList.remove('in', 'cur'); s.style.transitionDelay = '0ms';
+    setTimeout(() => s.remove(), 320);
+  }
+  let added = 0;
+  names.forEach((n, k) => {
+    let s = segs[k];
+    if (s && s.dataset.name !== n) { s.remove(); s = null; }
+    if (!s) {
+      s = document.createElement('span'); s.className = 'seg'; s.dataset.name = n;
+      if (k) { const sep = document.createElement('span'); sep.className = 'sep'; sep.textContent = '›'; s.appendChild(sep); }
+      const t = document.createElement('span'); t.textContent = n; s.appendChild(t);
+      s.style.transitionDelay = (added++ * 70) + 'ms';
+      path.appendChild(s);
+      requestAnimationFrame(() => requestAnimationFrame(() => s.classList.add('in')));
+    }
+    s.classList.toggle('cur', k === names.length - 1);
+  });
+}
+
+/* ============================================================
+   State machine
+   ============================================================ */
+const S = { level: 0, s: 0, i: 0, lockUntil: 0 };
+const section = () => CONTENT.sections[S.s];
+const cards = () => [...track.children];
+const lock = () => { S.lockUntil = performance.now() + LEVEL_LOCK; };
+
+function showHome(src) {
+  const cur = homeImgs[homeCur];
+  if (cur.dataset.src === src) return;
+  const nxt = homeImgs[1 - homeCur];
+  nxt.src = src; nxt.dataset.src = src; kenBurns(nxt, 1);
+  nxt.classList.add('on'); cur.classList.remove('on'); homeCur = 1 - homeCur;
+  setTimeout(() => { if (homeImgs[homeCur] !== cur) stopAnims(cur); }, 520);
+}
+
+function focusSection(idx) {
+  S.s = idx;
+  [...list.children].forEach((l, k) => l.classList.toggle('focus', k === idx));
+  [...colSections.children].forEach((r, k) => r.classList.toggle('sel', k === idx));
+  showHome(section().image);
+}
+
+function focusCard(idx) {
+  const cs = cards();
+  const prev = cs[S.i];
+  S.i = idx;
+  cs.forEach((c, k) => c.classList.toggle('focus', k === idx));
+  track.style.transform = `translateX(${-idx * CARD_STEP}px)`;
+  if (prev && prev !== cs[idx]) settle(prev.querySelector('img'));
+  kenBurns(cs[idx].querySelector('img'), 1);
+  stage.classList.toggle('hint', idx === 0);
+}
+
+function enterLevel1() {
+  buildItems(section());
+  car.classList.add('notrans'); car.classList.remove('in', 'leaf');
+  track.style.transform = 'translateX(0px)';
+  void car.offsetWidth;
+  car.classList.remove('notrans');
+  S.level = 1; S.i = 0;
+  stage.classList.add('l1');
+  requestAnimationFrame(() => car.classList.add('in'));
+  cards().forEach((c, k) => c.classList.toggle('focus', k === 0));
+  kenBurns(cards()[0].querySelector('img'), 1);
+  stage.classList.add('hint');
+  setPath(['Cave', section().name]);
+  lock();
+}
+
+function exitLevel1() {
+  S.level = 0;
+  stage.classList.remove('l1', 'hint');
+  cards().forEach(c => stopAnims(c.querySelector('img')));
+  setPath([]);
+  lock();
+}
+
+function cardPhotoRect() { return cards()[S.i].querySelector('.ph').getBoundingClientRect(); }
+function placeLeafOnCard() {
+  const r = cardPhotoRect();
+  leaf.style.transform = `translate(${r.left}px, ${r.top}px) scale(${r.width / 1920})`;
+}
+
+function enterLevel2() {
+  const it = section().items[S.i];
+  const cardImg = cards()[S.i].querySelector('img');
+  leafImg.src = it.image;
+  lsec.textContent = section().name; lname.textContent = it.name;
+  [...colItems.children].forEach((r, k) => r.classList.toggle('sel', k === S.i));
+  /* matched geometry: start exactly over the card's photo, at the card's current Ken Burns scale */
+  leaf.style.transition = 'none';
+  leaf.classList.remove('dissolve');
+  placeLeafOnCard();
+  const s = holdScale(cardImg);
+  kenBurns(leafImg, s);
+  void leaf.offsetWidth;
+  leaf.style.transition = '';
+  leaf.classList.add('open');
+  leaf.style.transform = 'translate(0px, 0px) scale(1)';
+  car.classList.add('leaf');
+  S.level = 2;
+  stage.classList.add('l2'); stage.classList.remove('hint');
+  setPath(['Cave', section().name, it.name]);
+  lock();
+}
+
+function exitLevel2(toHome) {
+  const cardImg = cards()[S.i].querySelector('img');
+  const s = holdScale(leafImg);
+  if (toHome) leaf.classList.add('dissolve');      /* the carousel is leaving too, so fade rather than shrink */
+  else { kenBurns(cardImg, s); placeLeafOnCard(); }
+  leaf.classList.remove('open');
+  car.classList.remove('leaf');
+  S.level = 1;
+  stage.classList.remove('l2');
+  if (!toHome) { stage.classList.toggle('hint', S.i === 0); setPath(['Cave', section().name]); }
+  lock();
+}
+
+function goHome() {
+  if (S.level === 2) exitLevel2(true);
+  if (S.level === 1) exitLevel1();
+}
+
+/* ============================================================
+   Keys — the Siri Remote stand-in
+   ============================================================ */
+const HANDLED = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', ' ', 'Escape', 'Backspace', 'Home']);
+addEventListener('keydown', e => {
+  if (!HANDLED.has(e.key)) return;
+  e.preventDefault();
+  touchLegend();
+  if (performance.now() < S.lockUntil) return;
+  const k = e.key;
+  if (k === 'Home') { goHome(); return; }
+  const back = (k === 'Escape' || k === 'Backspace');
+  const select = (k === 'Enter' || k === ' ');
+
+  if (S.level === 0) {
+    if (k === 'ArrowDown' && S.s < CONTENT.sections.length - 1) focusSection(S.s + 1);
+    else if (k === 'ArrowUp' && S.s > 0) focusSection(S.s - 1);
+    else if (select) enterLevel1();
+    /* Escape at home: nothing, by design */
+  } else if (S.level === 1) {
+    const n = section().items.length;
+    if (k === 'ArrowRight' && S.i < n - 1) focusCard(S.i + 1);
+    else if (k === 'ArrowLeft') { if (S.i > 0) focusCard(S.i - 1); else exitLevel1(); }
+    else if (select) enterLevel2();
+    else if (back) exitLevel1();
+  } else if (S.level === 2) {
+    if (back) exitLevel2(false);
+    /* the leaf is the end of the road: arrows and select do nothing */
+  }
+});
+
+/* ============================================================
+   Legend: fades after 6s of use, returns after 8s idle
+   ============================================================ */
+let useTimer = null, idleTimer = null;
+function touchLegend() {
+  if (!useTimer) useTimer = setTimeout(() => legend.classList.add('off'), 6000);
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => { legend.classList.remove('off'); clearTimeout(useTimer); useTimer = null; }, 8000);
+}
+
+/* ============================================================
+   Start
+   ============================================================ */
+homeImgs[0].src = CONTENT.sections[0].image; homeImgs[0].dataset.src = CONTENT.sections[0].image;
+homeImgs[0].classList.add('on'); kenBurns(homeImgs[0], 1);
+focusSection(0);
+(document.fonts ? document.fonts.ready : Promise.resolve()).then(() => requestAnimationFrame(() => stage.classList.add('ready')));
+</script>
+<script src="remote-bridge.js"></script>
+</body></html>

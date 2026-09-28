@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>01 Marquee · Cave TV interactive demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Inter:wght@300;400;500&display=swap">
+<style>
+/* ---------- ground ---------- */
+html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:#050505}
+body{color:#fff;font-family:Inter,sans-serif;position:relative;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+.stage{position:absolute;inset:0;overflow:hidden}
+:root{--gold:#b7996d;--ease:cubic-bezier(.2,.8,.2,1)}
+
+/* ---------- photo: full-bleed, always in slow motion ---------- */
+.photo{position:absolute;inset:0;overflow:hidden;background:#050505}
+.photo img{position:absolute;inset:0;width:1920px;height:1080px;object-fit:cover;opacity:0;
+  transition:opacity .5s ease;animation:kb 12s ease-in-out infinite alternate;transform-origin:62% 48%;will-change:transform,opacity}
+.photo img.on{opacity:1}
+@keyframes kb{from{transform:scale(1)}to{transform:scale(1.06)}}
+.dim{position:absolute;inset:0;background:rgba(5,5,5,.3)}
+.edge{position:absolute;inset:0;background:linear-gradient(to bottom,#050505 0,rgba(5,5,5,0) 16%,rgba(5,5,5,0) 84%,#050505 100%)}
+/* one scrim per level; only opacity moves, so the photo "widens" without a layout animation */
+.scrim{position:absolute;inset:0;opacity:0;transition:opacity .42s ease}
+.scrim.on{opacity:1}
+.scrim-0{background:linear-gradient(to right,#050505 0,#050505 44%,rgba(5,5,5,0) 68%)}
+.scrim-1{background:linear-gradient(to right,#050505 0,#050505 38%,rgba(5,5,5,0) 70%)}
+.scrim-2{background:linear-gradient(to right,rgba(5,5,5,.98) 0,rgba(5,5,5,.92) 24%,rgba(5,5,5,.5) 54%,rgba(5,5,5,.4) 100%)}
+
+/* ---------- chrome ---------- */
+.logo{position:absolute;left:90px;top:60px;height:56px;opacity:0;animation:fade 1s ease .2s forwards}
+@keyframes fade{to{opacity:1}}
+.tag{position:absolute;left:90px;bottom:60px;font:400 22px/30px Cinzel,serif;letter-spacing:.3em;text-transform:uppercase;color:var(--gold);
+  transition:opacity .35s ease}
+.tag.off{opacity:0}
+.tag.boot{transition-duration:1s}
+.legend{position:absolute;right:90px;bottom:60px;font:400 18px/24px Inter,sans-serif;color:rgba(255,255,255,.35);letter-spacing:.02em;transition:opacity .6s ease}
+.legend.off{opacity:0}
+
+/* ---------- path line ---------- */
+.path{position:absolute;left:90px;top:128px;height:30px;display:flex;align-items:center;font:400 22px/30px Inter,sans-serif;letter-spacing:.02em;
+  opacity:0;transform:translateX(-10px);transition:opacity .35s ease,transform .35s var(--ease)}
+.path.on{opacity:1;transform:none}
+.path .seg{display:inline-flex;align-items:center;transition:opacity .3s ease,transform .3s var(--ease)}
+.path .seg.in,.path .seg.out{opacity:0;transform:translateX(-8px)}
+.path .sep{color:rgba(183,153,109,.4);margin:0 14px;font-size:24px;position:relative;top:-1px}
+.path .crumb{color:rgba(183,153,109,.6);transition:color .35s ease}
+.path .crumb.cur{color:#fff}
+
+/* ---------- back affordance (lives at the top of whichever column is current) ---------- */
+.back{position:absolute;left:456px;top:168px;height:42px;padding:0 16px 0 14px;display:flex;align-items:center;
+  font:400 24px/30px Inter,sans-serif;color:rgba(183,153,109,.6);letter-spacing:.02em;
+  opacity:0;transform:translateX(-12px);transform-origin:left center;
+  transition:opacity .35s ease,transform .3s var(--ease),color .2s ease}
+.back .chev{font-size:34px;line-height:30px;margin-right:9px;position:relative;top:-3px}
+.back::before{content:"";position:absolute;inset:0;border:1px solid rgba(183,153,109,.75);border-radius:999px;
+  box-shadow:0 0 28px rgba(183,153,109,.35);opacity:0;transition:opacity .2s ease}
+.back.on{opacity:1;transform:none}
+.back.on.focus{color:var(--gold);transform:scale(1.08)}
+.back.focus::before{opacity:1}
+
+/* ---------- the stacks ---------- */
+.stack{position:absolute;margin:0;padding:0;list-style:none;top:230px}
+.col-a{left:90px}
+.col-b{left:470px}
+.stack li{font-family:Cinzel,serif;font-weight:500;white-space:nowrap;color:rgba(255,255,255,.4);
+  transform-origin:left center;will-change:transform,opacity;
+  transition-property:transform,opacity,color,text-shadow;transition-timing-function:var(--ease),ease,ease,ease;transition-duration:.2s}
+.stack li.focus{color:#fff;text-shadow:0 0 34px rgba(183,153,109,.6)}
+.stack li.held{color:var(--gold)}
+.stack li.small{color:rgba(255,255,255,.35)}
+.stack li.small.held{color:var(--gold)}
+.rule{position:absolute;left:90px;top:572px;width:36px;height:1px;background:rgba(183,153,109,.45);opacity:0;transition:opacity .42s ease}
+.rule.on{opacity:1}
+
+/* ---------- the leaf (end of the road) ---------- */
+.leaf{position:absolute;left:470px;top:300px}
+.leaf>*{opacity:0;transform:translateY(24px);transition:opacity .3s ease,transform .3s var(--ease)}
+.leaf.on>*{opacity:1;transform:none;transition-duration:.42s}
+.leaf.on .kicker{transition-delay:.16s}
+.leaf.on .name{transition-delay:.22s}
+.leaf.on .panel{transition-delay:.3s}
+.leaf .kicker{font:500 24px/30px Cinzel,serif;letter-spacing:.3em;text-transform:uppercase;color:var(--gold)}
+.leaf .name{font:500 96px/110px Cinzel,serif;color:#fff;margin-top:14px;white-space:nowrap;text-shadow:0 2px 30px rgba(0,0,0,.6)}
+.leaf .panel{width:860px;height:220px;margin-top:44px;border:1px solid rgba(183,153,109,.6);border-radius:6px;background:rgba(5,5,5,.18)}
+</style></head>
+<body>
+<div class="stage">
+  <div class="photo"></div>
+  <div class="dim"></div>
+  <div class="scrim scrim-0 on"></div>
+  <div class="scrim scrim-1"></div>
+  <div class="scrim scrim-2"></div>
+  <div class="edge"></div>
+
+  <img class="logo" src="assets/CaveLogo.png" alt="Cave">
+  <div class="path"></div>
+  <div class="back"><span class="chev">‹</span><span>Back</span></div>
+
+  <ul class="stack col-a"></ul>
+  <ul class="stack col-b"></ul>
+  <div class="rule"></div>
+
+  <div class="leaf"><div class="kicker"></div><div class="name"></div><div class="panel"></div></div>
+
+  <div class="tag off boot">A hotel like no other awaits</div>
+  <div class="legend">← ↑ → ↓ move &nbsp;·&nbsp; Enter select &nbsp;·&nbsp; Esc back</div>
+</div>
+
+<script>
+/* =====================================================================
+   CONTENT — the only place hotel words and photos live. The rest of this
+   file renders whatever is here, exactly as the real app renders content.json.
+   ===================================================================== */
+const CONTENT = {
+  brand: "Cave",
+  tagline: "A hotel like no other awaits",
+  sections: [
+    { name: "Your Room",       photo: "assets/hero-room.jpg",    items: [
+      { name: "Lighting",           photo: "assets/penthouse-2.jpg" },
+      { name: "Curtains",           photo: "assets/penthouse-3.jpg" },
+      { name: "TV & AirPlay",       photo: "assets/penthouse-4.jpg" },
+      { name: "Coffee",             photo: "assets/penthouse-5.jpg" } ] },
+    { name: "Eat & Drink",     photo: "assets/hero-eat.jpg",     items: [
+      { name: "Firepit",            photo: "assets/hero-firepit.jpg" },
+      { name: "The Korean Cowgirl", photo: "assets/hero-cowgirl.jpg" },
+      { name: "The Deck",           photo: "assets/hero-deck.jpg" },
+      { name: "Room Service",       photo: "assets/hero-roomservice.jpg" } ] },
+    { name: "Pool & Wellness", photo: "assets/hero-pool.jpg",    items: [
+      { name: "Pool",               photo: "assets/hero-pool.jpg" },
+      { name: "Sauna",              photo: "assets/hero-gym.jpg" },
+      { name: "Gym",                photo: "assets/hero-gym.jpg" },
+      { name: "Treatments",         photo: "assets/hero-suite.jpg" } ] },
+    { name: "Golf",            photo: "assets/hero-golf.jpg",    items: [
+      { name: "The Course",         photo: "assets/hero-golf.jpg" },
+      { name: "Driving Range",      photo: "assets/golf-2.jpg" },
+      { name: "Tee Times",          photo: "assets/hero-golf.jpg" },
+      { name: "Coaching",           photo: "assets/golf-2.jpg" } ] },
+    { name: "What's On",       photo: "assets/hero-events.jpg",  items: [
+      { name: "This Week",          photo: "assets/hero-events.jpg" },
+      { name: "Live Music",         photo: "assets/deck-evening.jpg" },
+      { name: "Seasonal",           photo: "assets/hero-events.jpg" },
+      { name: "Offers",             photo: "assets/hero-breakfast.jpg" } ] },
+    { name: "Explore Kent",    photo: "assets/hero-explore.jpg", items: [
+      { name: "Canterbury",         photo: "assets/hero-explore.jpg" },
+      { name: "Whitstable",         photo: "assets/hero-explore.jpg" },
+      { name: "Walks",              photo: "assets/hero-hotel.jpg" },
+      { name: "Getting Around",     photo: "assets/hero-explore.jpg" } ] },
+    { name: "Contact",         photo: "assets/hero-hotel.jpg",   items: [
+      { name: "Reception",          photo: "assets/hero-hotel.jpg" },
+      { name: "Housekeeping",       photo: "assets/hero-room.jpg" },
+      { name: "Wi-Fi",              photo: "assets/penthouse-6.jpg" },
+      { name: "Check-out",          photo: "assets/hero-hotel.jpg" } ] }
+  ]
+};
+
+/* =====================================================================
+   Geometry. Both stacks share one origin so a level change is a pure
+   transform: a big word becomes a small word by translate + scale only.
+   ===================================================================== */
+const G = {
+  top: 230,          // y of the first line of any stack
+  pitchBig: 100,     // line pitch of a big stack
+  pitchSmall: 46,    // line pitch once receded
+  fontA: 90,         // level-0 words
+  fontB: 80,         // level-1 words
+  fontSmall: 28.8,   // receded size (90 x .32, 80 x .36)
+  leftA: 90, leftB: 470,
+  focusScale: 1.08
+};
+G.scaleA = G.fontSmall / G.fontA;
+G.scaleB = G.fontSmall / G.fontB;
+G.smallTopB = G.top + CONTENT.sections.length * G.pitchSmall + 40;   // second small column sits beneath the first
+
+/* translate needed for line i of a big stack to land on line i of a small column
+   whose first line is at `smallTop` (transform-origin is left centre). */
+function shrinkY(i, smallTop) {
+  const d = G.pitchSmall - G.pitchBig;
+  return (smallTop - G.top) + d * i + d / 2;
+}
+
+/* =====================================================================
+   State. Everything on screen is a function of this object.
+   ===================================================================== */
+const S = { level: 0, sec: 0, item: 0, focus: "A" };   // focus: "A" (section), "B" (item), "back" (the chip)
+let locked = false;    // brief input lock while a level transition settles
+let booted = false;    // the tagline arrives once, after the words
+
+const sections = CONTENT.sections;
+const $ = s => document.querySelector(s);
+const photoEl = $(".photo"), colA = $(".col-a"), colB = $(".col-b"), leaf = $(".leaf"),
+      back = $(".back"), path = $(".path"), tag = $(".tag"), legend = $(".legend"), rule = $(".rule");
+const scrims = [...document.querySelectorAll(".scrim")];
+
+/* ---------- building ---------- */
+function makeStack(ul, items, font, initial) {
+  ul.innerHTML = "";
+  return items.map(it => {
+    const li = document.createElement("li");
+    li.textContent = it.name;
+    li.style.fontSize = font + "px";
+    li.style.lineHeight = G.pitchBig + "px";
+    li.style.opacity = "0";
+    li.style.transform = initial;
+    li._tf = initial; li._op = "0";
+    ul.appendChild(li);
+    return li;
+  });
+}
+const aLis = makeStack(colA, sections, G.fontA, "translate(0,30px) scale(1)");
+let bLis = [];
+function buildB() {
+  bLis = makeStack(colB, sections[S.sec].items, G.fontB, "translate(-40px,0) scale(1)");
+  colB.offsetHeight;   // commit the start position before the entrance runs
+}
+function buildLeaf() {
+  leaf.querySelector(".kicker").textContent = sections[S.sec].name;
+  leaf.querySelector(".name").textContent = sections[S.sec].items[S.item].name;
+}
+
+/* set transform/opacity only when they change, so a running entrance is never cut short */
+function put(el, tf, op, dur, delay) {
+  if (el._tf === tf && el._op === op) return;
+  el.style.transitionDuration = dur + "ms";
+  el.style.transitionDelay = (delay || 0) + "ms";
+  el.style.transform = tf;
+  el.style.opacity = op;
+  el._tf = tf; el._op = op;
+}
+
+/* ---------- photo: crossfade 500ms, Ken Burns on every frame ---------- */
+function setPhoto(src) {
+  if (photoEl._src === src) return;
+  photoEl._src = src;
+  if (photoEl._pending) { photoEl._pending.remove(); photoEl._pending = null; }
+  const img = new Image();
+  img.alt = ""; img.src = src;
+  photoEl.appendChild(img);
+  photoEl._pending = img;
+  const go = () => {
+    if (photoEl._pending !== img) return;
+    photoEl._pending = null;
+    const old = [...photoEl.querySelectorAll("img.on")];
+    img.offsetWidth;
+    img.classList.add("on");
+    old.forEach(o => { o.classList.remove("on"); setTimeout(() => o.remove(), 600); });
+  };
+  (img.decode ? img.decode().then(go, go) : Promise.resolve().then(go));
+}
+function currentPhoto() {
+  const sec = sections[S.sec];
+  if (S.level === 0) return sec.photo;
+  if (S.level === 1 && S.focus === "back") return sec.photo;   // pointing at Back previews the parent
+  return sec.items[S.item].photo;
+}
+
+/* ---------- path line ---------- */
+function renderPath() {
+  const want = S.level === 0 ? [] :
+    [CONTENT.brand, sections[S.sec].name].concat(S.level === 2 ? [sections[S.sec].items[S.item].name] : []);
+  const live = [...path.querySelectorAll(".seg:not(.out)")];
+  for (let i = want.length; i < live.length; i++) {
+    const seg = live[i];
+    seg.classList.add("out");
+    setTimeout(() => seg.remove(), 340);
+  }
+  if (want.length > live.length) path.querySelectorAll(".seg.out").forEach(s => s.remove());
+  want.forEach((text, i) => {
+    let seg = live[i];
+    if (!seg) {
+      seg = document.createElement("span");
+      seg.className = "seg in";
+      seg.innerHTML = (i ? '<span class="sep">›</span>' : "") + '<span class="crumb"></span>';
+      path.appendChild(seg);
+      seg.offsetWidth;
+      seg.classList.remove("in");
+    }
+    const c = seg.querySelector(".crumb");
+    c.textContent = text;
+    c.classList.toggle("cur", i === want.length - 1);
+  });
+  path.classList.toggle("on", S.level > 0);
+}
+
+/* ---------- render: state in, screen out ---------- */
+function render(prev, flags = {}) {
+  const L = S.level;
+  const levelChanged = prev.level !== L;
+  const dur = levelChanged ? 420 : 200;
+
+  // Column A: big at level 0, receded small column otherwise
+  aLis.forEach((li, i) => {
+    const sel = i === S.sec;
+    let tf, delay = 0, d = dur;
+    if (L === 0) {
+      tf = `translate(0,0) scale(${sel ? G.focusScale : 1})`;
+      if (flags.appearA) { delay = i * 35; d = 420; }
+    } else {
+      tf = `translate(0,${shrinkY(i, G.top)}px) scale(${G.scaleA})`;
+    }
+    li.classList.toggle("focus", L === 0 && sel);
+    li.classList.toggle("held", L > 0 && sel);
+    li.classList.toggle("small", L > 0);
+    put(li, tf, "1", d, delay);
+  });
+
+  // Column B: hidden at level 0, big at level 1, second small column at level 2
+  bLis.forEach((li, i) => {
+    const sel = i === S.item;
+    let tf, op = "1", delay = 0, d = dur;
+    if (L === 0) {
+      // fold back into the parent; from the leaf it simply fades where it stands
+      tf = prev.level === 2 ? li._tf : "translate(-40px,0) scale(1)";
+      op = "0"; d = 300; delay = (bLis.length - 1 - i) * 25;
+    } else if (L === 1) {
+      tf = `translate(0,0) scale(${sel && S.focus === "B" ? G.focusScale : 1})`;
+      if (flags.appearB) { delay = 120 + i * 38; d = 420; }
+    } else {
+      tf = `translate(${G.leftA - G.leftB}px,${shrinkY(i, G.smallTopB)}px) scale(${G.scaleB})`;
+    }
+    li.classList.toggle("focus", L === 1 && sel && S.focus === "B");
+    li.classList.toggle("held", L === 2 && sel);
+    li.classList.toggle("small", L === 2);
+    put(li, tf, op, d, delay);
+  });
+
+  leaf.classList.toggle("on", L === 2);
+  rule.classList.toggle("on", L === 2);
+  back.classList.toggle("on", L >= 1);
+  back.classList.toggle("focus", S.focus === "back");
+  back.style.transitionDelay = (levelChanged && L === 1 && prev.level === 0) ? "160ms" : "0ms";
+  tag.classList.toggle("off", L > 0 || !booted);
+  scrims.forEach((s, i) => s.classList.toggle("on", i === L));
+  setPhoto(currentPhoto());
+  renderPath();
+}
+
+/* ---------- the remote ---------- */
+const KEYS = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right",
+               Enter: "select", " ": "select", Escape: "back", Backspace: "back", Home: "home" };
+
+function handle(k) {
+  const prev = { ...S };
+  const flags = {};
+  const items = sections[S.sec].items;
+
+  if (k === "home") {
+    if (S.level === 0) return;
+    S.level = 0; S.focus = "A";
+  } else if (S.level === 0) {
+    if (k === "up")        S.sec = Math.max(0, S.sec - 1);
+    else if (k === "down") S.sec = Math.min(sections.length - 1, S.sec + 1);
+    else if (k === "select") { S.level = 1; S.item = 0; S.focus = "B"; buildB(); flags.appearB = true; }
+    else return;                                   // left, right, back: nothing at home
+  } else if (S.level === 1) {
+    if (S.focus === "B") {
+      if (k === "up")        { if (S.item > 0) S.item--; else S.focus = "back"; }
+      else if (k === "down") S.item = Math.min(items.length - 1, S.item + 1);
+      else if (k === "left") S.focus = "back";     // the parent is to the left
+      else if (k === "select") { S.level = 2; S.focus = "back"; buildLeaf(); }
+      else if (k === "back") { S.level = 0; S.focus = "A"; }
+      else return;
+    } else {                                       // on the Back chip
+      if (k === "down" || k === "right") S.focus = "B";
+      else if (k === "up" || k === "left" || k === "select" || k === "back") { S.level = 0; S.focus = "A"; }
+      else return;
+    }
+  } else {                                         // level 2: Back is the only thing to focus
+    if (k === "up" || k === "left" || k === "select" || k === "back") { S.level = 1; S.focus = "B"; }
+    else return;
+  }
+
+  if (S.level !== prev.level) { locked = true; setTimeout(() => { locked = false; }, 220); }
+  render(prev, flags);
+}
+
+window.addEventListener("keydown", e => {
+  const k = KEYS[e.key];
+  if (!k) return;
+  e.preventDefault();
+  touched();
+  if (locked) return;
+  handle(k);
+});
+
+/* ---------- legend: fades 6s into use, returns after 8s idle ---------- */
+let hideT = null, idleT = null;
+function touched() {
+  clearTimeout(idleT);
+  idleT = setTimeout(() => { legend.classList.remove("off"); clearTimeout(hideT); hideT = null; }, 8000);
+  if (!legend.classList.contains("off") && !hideT) {
+    hideT = setTimeout(() => { legend.classList.add("off"); hideT = null; }, 6000);
+  }
+}
+
+/* ---------- start ---------- */
+sections.forEach(s => { new Image().src = s.photo; s.items.forEach(i => { new Image().src = i.photo; }); });
+colA.offsetHeight;
+render({ level: 0, sec: 0, item: 0, focus: "A" }, { appearA: true });
+setTimeout(() => {
+  booted = true;
+  tag.classList.toggle("off", S.level > 0);
+  setTimeout(() => tag.classList.remove("boot"), 1000);
+}, 900);
+</script>
+<script src="remote-bridge.js"></script>
+</body></html>
