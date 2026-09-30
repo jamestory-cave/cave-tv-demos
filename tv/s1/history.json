@@ -1,5 +1,17 @@
 [
   {
+    "revision": 4,
+    "bundle": "bundles/4-38688cf9.json",
+    "publishedAt": "2026-09-30T10:43:41Z",
+    "by": "Rhys",
+    "summary": [
+      "Eat & Drink › The Korean Cowgirl: Title: \"Korean Cowgirl\" → \"The Korean Cowgirl\"",
+      "Eat & Drink › The Korean Cowgirl › The Korean Cowgirl Menu: MINI (1 person): £38 → 38",
+      "Eat & Drink › The Korean Cowgirl › The Korean Cowgirl Menu: DIRTY (2 persons): £75 → 75",
+      "Eat & Drink › The Korean Cowgirl › The Korean Cowgirl Menu: LUDICROUS (4 persons): £130 → 130"
+    ]
+  },
+  {
     "revision": 3,
     "bundle": "bundles/3-29f164ab.json",
     "publishedAt": "2026-09-30T10:29:42Z",
