@@ -152,6 +152,14 @@ export class MediaRegistry {
     return null;
   }
 
+  /** False for a media/ path the Builder has never heard of (deleted or from elsewhere). */
+  known(src) {
+    if (!src) return true;
+    const p = parseMediaPath(src);
+    if (!p) return true; // bundled asset names and https URLs are the TV's business
+    return this.pending.has(p.hash) || !!this.index.media[p.hash];
+  }
+
   /** {width, height} of a photo if the Builder knows it, else null. */
   size(src) {
     const m = this.meta(src);
@@ -163,6 +171,7 @@ export class MediaRegistry {
     if (!src) return 'No photo';
     const m = this.meta(src);
     if (m) return m.name;
+    if (parseMediaPath(src)) return 'Photo missing';
     if (/^https?:/.test(src)) return src;
     return src;
   }

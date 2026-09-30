@@ -33,7 +33,7 @@ export function mount(host, app) {
         status));
     } else {
       let token = '';
-      const f = textField({ id: uid('tk'), label: 'Paste the passcode', value: '', type: 'password', spellcheck: false, placeholder: 'github_pat_…', onInput: (v) => { token = v; } });
+      const f = textField({ id: uid('tk'), label: 'Paste the passcode', value: '', type: 'password', spellcheck: false, placeholder: 'Paste the whole passcode', onInput: (v) => { token = v; } });
       f.input.setAttribute('autocomplete', 'off');
       box.append(f);
       const status = el('div.small.muted', { style: { marginTop: '6px' } });
@@ -63,8 +63,10 @@ export function mount(host, app) {
 
     // ---- where things go ----
     const where = el('div.panel', { style: { maxWidth: '640px' } });
-    where.append(el('h2', 'Where the TV reads from'));
-    where.append(el('dl.kv', el('dt', 'Content'), el('dd', el('code', config.baseURL)), el('dt', 'Repository'), el('dd', el('code', `${config.owner}/${config.repo}`), ` (branch ${config.branch}, folder ${config.contentPath})`), el('dt', 'This Builder'), el('dd', el('code', location.href.split('#')[0]))));
+    where.append(el('h2', 'This browser'));
+    const details = el('details', { style: { marginBottom: '10px' } }, el('summary.small', { style: { cursor: 'pointer' } }, 'Technical details'),
+      el('dl.kv', el('dt', 'TVs read from'), el('dd', el('code', config.baseURL)), el('dt', 'Published to'), el('dd', el('code', `${config.owner}/${config.repo}`), ` (branch ${config.branch}, folder ${config.contentPath})`), el('dt', 'This Builder'), el('dd', el('code', location.href.split('#')[0]))));
+    where.append(details);
     where.append(el('button.btn.sm.danger', { type: 'button', onclick: async () => { if (await confirmModal('Clear everything in this browser?', 'Draft, uploaded photos, name and passcode are all removed. What is published is untouched.', { okLabel: 'Clear', danger: true })) { await app.browser.clearAll(); app.github.forgetToken(); localStorage.clear(); location.reload(); } } }, 'Clear everything kept in this browser'));
     main.append(where);
   }

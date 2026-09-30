@@ -162,6 +162,12 @@ textarea.in { resize: vertical; min-height: 80px; line-height: 1.45; }
 .remote-pad .flash { opacity: 0; transition: opacity .12s; }
 .remote-pad .flash.on { opacity: 1; transition: none; }
 .remote-wrap.show-remote .remote-pad { display: block; }
+@media (max-width: 1200px) {
+  .remote-wrap { flex-direction: column; align-items: center; }
+  .remote-wrap .tv-host { flex: none; width: 100%; }
+  .remote-pad { width: 260px; margin-top: 8px; }
+  .remote-pad svg { width: 260px; }
+}
 .photo-pick { display: flex; gap: 10px; align-items: center; }
 .photo-pick .thumb { width: 96px; height: 54px; border-radius: 4px; background: #c6cad0 center / cover no-repeat; border: 1px solid var(--line); flex: none; }
 .tag-row { display: flex; gap: 4px; flex-wrap: wrap; }

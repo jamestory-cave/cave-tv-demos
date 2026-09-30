@@ -2,7 +2,6 @@
 
 import { el, clear, plural, fmtDate } from '../util.js';
 import { model } from '../model.js';
-import { buildBundle } from '../bundle.js';
 import { PublishConflict } from '../stores/github.js';
 import { toast, modal, confirmModal, promptModal, textField, uid } from '../ui.js';
 
@@ -15,26 +14,33 @@ export function mount(host, app) {
 
   function renderMain() {
     clear(main);
-    const { entries } = app.changes();
-    const validation = app.validation();
-    const { heldBack } = buildBundle(model.draft, { held: validation });
+    const plan = app.plan();
+    const { entries, live, heldBack, stop, validation } = plan;
     const since = model.published ? `since ${fmtDate(model.published.version.publishedAt)}` : '';
+    const goingLive = live.length;
+    const heldCount = entries.length - goingLive;
     main.append(el('div.row.between', { style: { marginBottom: '10px' } },
-      el('div', el('h1', 'Publish'), el('p.muted', entries.length ? `${plural(entries.length, 'change')} ${since}. Nothing reaches a guest until you publish.` : `Nothing has changed ${since}.`)),
+      el('div', el('h1', 'Publish'), el('p.muted', entries.length
+        ? `${plural(goingLive, 'change')} ready to go live${heldCount ? `, ${heldCount} held back` : ''} ${since}. Nothing reaches a guest until you publish.`
+        : `Nothing has changed ${since}.`)),
       el('button.btn', { type: 'button', disabled: !entries.length, onclick: resetChanges }, 'Reset my changes')));
 
+    for (const m of stop) main.append(el('div.note.block.small', el('strong', 'Cannot publish yet. '), m));
     for (const h of heldBack) {
-      main.append(el('div.note.block.small', el('strong', 'Held back. '), `${model.pathLabel(h.id)}: ${h.blockers.map((b) => b.message).join('; ')}. Fix it, or publish without it. `,
+      const why = h.blockers.map((b) => b.message).join('; ');
+      main.append(el('div.note.block.small', el('strong', 'Held back. '),
+        h.kept
+          ? `${model.pathLabel(h.id)}: ${why}. Your changes to this page (and anything under it) stay back; the version on TVs now stays as it is. `
+          : `${model.pathLabel(h.id)}: ${why}. It is new, so it will not be on TVs until it is fixed. `,
         el('button.btn.link.sm', { type: 'button', onclick: () => app.go('editor', { page: h.id }) }, 'Open the page')));
     }
     const list = el('div', { style: { marginTop: '10px' } });
     for (const e of entries) {
-      const held = heldBack.some((h) => h.id === e.id);
-      const row = el('div.chg' + (held ? '.held' : e.kind === 'new' ? '.new' : e.kind === 'hidden' ? '.hidden-k' : e.kind === 'removed' ? '.removed' : ''));
+      const row = el('div.chg' + (e.held ? '.held' : e.kind === 'new' ? '.new' : e.kind === 'hidden' ? '.hidden-k' : e.kind === 'removed' ? '.removed' : ''));
       const w = el('div.w', el('b', e.path));
       const lines = el('div.lines');
       for (const l of e.lines) lines.append(el('div', l));
-      if (held) lines.append(el('div', { style: { color: 'var(--red)' } }, 'Held back until fixed'));
+      if (e.held) lines.append(el('div', { style: { color: 'var(--red)' } }, model.find(e.id) && model.published && heldBack.find((h) => h.id === e.id)?.kept === false ? 'Not on TVs until fixed' : 'Held back: the version on TVs now stays'));
       w.append(lines);
       row.append(w);
       if (e.id !== 'hotel' && e.kind !== 'removed' && model.find(e.id)) row.append(el('button.btn.sm', { type: 'button', onclick: () => app.go('editor', { page: e.id }) }, 'View'));
@@ -51,15 +57,16 @@ export function mount(host, app) {
 
   function renderAside() {
     clear(aside);
-    const { entries, summary } = app.changes();
+    const plan = app.plan();
+    const ready = plan.live;
     const hasToken = app.github.hasToken;
-    aside.append(el('h3', entries.length ? `Publish ${plural(entries.length, 'change')}` : 'Publish'));
+    aside.append(el('h3', ready.length ? `Publish ${plural(ready.length, 'change')}` : 'Publish'));
     const panel = el('div.panel', { style: { marginBottom: '16px' } });
     panel.append(el('p.small', { style: { marginBottom: '8px' } }, el('strong', 'Now. '), el('span.muted', 'TVs follow within a couple of minutes (GitHub Pages takes a moment to update).')));
     panel.append(textField({ id: uid('n'), label: 'Note for the team (optional)', value: note, limit: 80, placeholder: 'Scallops price, wellness hours', onInput: (v) => { note = v; } }));
     const by = app.publisherName();
     panel.append(el('p.small.muted', { style: { marginBottom: '8px' } }, by ? `Publishing as ${by}. ` : 'You will be asked for your name the first time. ', el('button.btn.link.sm', { type: 'button', onclick: () => app.go('settings') }, 'Change')));
-    const btn = el('button.btn.pri', { type: 'button', disabled: !hasToken || !entries.length || busy, style: { padding: '9px 22px' }, onclick: () => doPublish(summary) }, 'Publish now');
+    const btn = el('button.btn.pri', { type: 'button', disabled: !hasToken || !plan.canPublish || busy, style: { padding: '9px 22px' }, onclick: () => doPublish() }, 'Publish now');
     panel.append(el('div.row', btn));
     if (!hasToken) panel.append(el('div.note.warn.small', { style: { marginTop: '10px' } }, el('strong', 'Publishing is off. '), 'Publishing writes to the hotel\'s GitHub repository, which needs the publishing passcode. Enter it once in ', el('button.btn.link.sm', { type: 'button', onclick: () => app.go('settings') }, 'Settings'), '. Everything else works without it.'));
     panel.append(el('div#progress.progress'));
@@ -71,8 +78,10 @@ export function mount(host, app) {
     history.forEach((h, i) => {
       const live = model.published?.version?.revision === h.revision;
       const row = el('div.hist' + (live ? '.live' : ''));
-      const label = h.note || (h.summary || [])[0] || (h.revision === 1 ? 'First publish' : 'Publish');
-      row.append(el('span', live ? el('strong', 'On TVs now') : el('span', `Revision ${h.revision}`), ` · ${fmtDate(h.publishedAt)}`, el('small', `${h.by || 'Unknown'} · ${label}${(h.summary || []).length > 1 ? ` · ${plural(h.summary.length, 'change')}` : ''}`)));
+      const seeded = h.by === 'seed.py';
+      const by = seeded ? 'First publish' : (h.by || 'Unknown');
+      const label = h.note || (seeded ? ((h.summary || [])[0] || '').replace(/^First publish,?\s*/i, '') || 'from the app\'s built-in content' : (h.summary || [])[0] || 'Publish');
+      row.append(el('span', live ? el('strong', 'On TVs now') : el('span', `Publish ${h.revision}`), ` · ${fmtDate(h.publishedAt)}`, el('small', `${by} · ${label}${(h.summary || []).length > 1 ? ` · ${plural(h.summary.length, 'change')}` : ''}`)));
       const ops = el('span.row');
       ops.append(el('button.btn.sm', { type: 'button', onclick: () => showSummary(h) }, 'View'));
       if (!live) ops.append(el('button.btn.sm', { type: 'button', disabled: !hasToken || busy, title: hasToken ? '' : 'Needs the publishing passcode', onclick: () => restore(h) }, 'Restore'));
@@ -85,7 +94,7 @@ export function mount(host, app) {
 
   function showSummary(h) {
     const body = el('div');
-    body.append(el('p.small.muted', `Revision ${h.revision} · ${fmtDate(h.publishedAt)} · ${h.by || 'Unknown'} · ${h.bundle}`));
+    body.append(el('p.small.muted', `Publish ${h.revision} · ${fmtDate(h.publishedAt)} · ${h.by === 'seed.py' ? 'First publish' : h.by || 'Unknown'}`));
     const ul = el('ul.small');
     for (const s of h.summary || []) ul.append(el('li', s));
     if (!(h.summary || []).length) ul.append(el('li', 'No summary recorded.'));
@@ -104,22 +113,29 @@ export function mount(host, app) {
 
   function progress(msg) { const p = aside.querySelector('#progress'); if (p) p.textContent = msg; }
 
-  async function doPublish(summary) {
+  async function doPublish() {
     if (busy) return;
     const by = await ensureName();
     if (!by) return;
-    const validation = app.validation();
-    const { bundle, heldBack } = buildBundle(model.draft, { held: validation });
-    if (!(bundle.home.children || []).length) { toast('Nothing to show: every section is hidden or held back.', { error: true }); return; }
-    const lines = [...summary];
-    for (const h of heldBack) lines.push(`Held back: ${model.pathLabel(h.id)} (${h.blockers.map((b) => b.message).join('; ')})`);
-    const ok = await confirmModal('Publish to the TV?', `${plural(summary.length, 'change')} will go live${heldBack.length ? `, with ${plural(heldBack.length, 'page')} held back` : ''}. TVs follow within a couple of minutes.`, { okLabel: 'Publish now' });
+    const plan = app.plan();
+    const { bundle, heldBack, live, summary, stop } = plan;
+    if (stop.length) { toast(stop[0], { error: true }); return; }
+    if (!live.length) { toast('Nothing is ready to go live.', { error: true }); return; }
+    const kept = heldBack.filter((h) => h.kept).map((h) => model.pathLabel(h.id));
+    const left = heldBack.filter((h) => !h.kept).map((h) => model.pathLabel(h.id));
+    const parts = [`${plural(live.length, 'change')} will go live.`];
+    if (kept.length) parts.push(`Held back, staying as they are on TVs now: ${kept.join(', ')}.`);
+    if (left.length) parts.push(`New and not going on TVs until fixed: ${left.join(', ')}.`);
+    parts.push('TVs follow within a couple of minutes.');
+    const ok = await confirmModal('Publish to the TV?', parts.join(' '), { okLabel: 'Publish now' });
     if (!ok) return;
     busy = true; renderAside();
     try {
-      const media = app.media.pendingRecords();
+      // Only the pending photos this bundle actually uses go to the repository.
+      const used = new Set(JSON.stringify(bundle).match(/media\/[0-9a-f]{12}-\d+\.jpg/g) || []);
+      const media = app.media.pendingRecords().filter((m) => [...used].some((u) => u.includes(m.hash)));
       const result = await app.github.publish({
-        bundle, basedOnRevision: model.basedOn?.revision, summary: lines, by, note: note.trim(), media, mediaIndex: app.media.index, progress,
+        bundle, basedOnRevision: model.basedOn?.revision, summary, by, note: note.trim(), media, mediaIndex: app.media.index, progress,
       });
       await app.media.markPublished(media.map((m) => m.hash), result.mediaIndex);
       model.published = {
@@ -129,7 +145,7 @@ export function mount(host, app) {
       model.basedOn = { revision: result.revision, bundle: result.bundlePath };
       note = '';
       model.commit('Publish', () => {}, { origin: 'publish', undoable: false });
-      toast(`Published revision ${result.revision}. The TV picks it up within a couple of minutes.`, { ms: 10000 });
+      toast(`Published. The TV picks it up within a couple of minutes.${heldBack.length ? ' Held-back pages are still waiting to be fixed.' : ''}`, { ms: 10000 });
     } catch (e) {
       if (e instanceof PublishConflict) toast(e.message, { error: true, action: 'Reload', onAction: () => location.reload() });
       else toast(`Publishing failed: ${e.message}`, { error: true });
@@ -155,7 +171,7 @@ export function mount(host, app) {
       model.published = { version: result.version, bundle: { ...old, version: result.revision }, history: [result.historyEntry, ...(model.published?.history || [])].slice(0, 20), mediaIndex: result.mediaIndex };
       model.basedOn = { revision: result.revision, bundle: result.bundlePath };
       model.commit('Restore', () => {}, { origin: 'publish', undoable: false });
-      toast(`Restored as revision ${result.revision}.`, { ms: 10000 });
+      toast('Restored. TVs show that content again within a couple of minutes.', { ms: 10000 });
     } catch (e) {
       if (e instanceof PublishConflict) toast(e.message, { error: true, action: 'Reload', onAction: () => location.reload() });
       else toast(`Restore failed: ${e.message}`, { error: true });

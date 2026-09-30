@@ -64,8 +64,22 @@ export function toast(message, { action, onAction, error, ms = 6000 } = {}) {
 export function modal({ title, body, actions = [], wide = false, onClose }) {
   const box = el('div.modal' + (wide ? '.wide' : ''), { role: 'dialog', 'aria-modal': 'true', 'aria-label': title });
   const back = el('div.modal-back');
-  const close = () => { back.remove(); document.removeEventListener('keydown', esc); onClose && onClose(); };
-  const esc = (e) => { if (e.key === 'Escape') close(); };
+  const opener = document.activeElement;
+  const close = () => {
+    back.remove(); document.removeEventListener('keydown', esc); onClose && onClose();
+    if (opener && document.contains(opener) && opener.focus) opener.focus();
+  };
+  const focusables = () => [...box.querySelectorAll('input, textarea, select, button, [tabindex]:not([tabindex="-1"])')].filter((n) => !n.disabled);
+  const esc = (e) => {
+    if (e.key === 'Escape') { close(); return; }
+    if (e.key !== 'Tab') return;
+    // Keep Tab inside the dialog.
+    const list = focusables();
+    if (!list.length) return;
+    const first = list[0], last = list[list.length - 1];
+    if (e.shiftKey && (document.activeElement === first || !box.contains(document.activeElement))) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && (document.activeElement === last || !box.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
+  };
   document.addEventListener('keydown', esc);
   box.append(el('h2', title));
   if (body) box.append(body);

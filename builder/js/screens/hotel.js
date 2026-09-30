@@ -11,7 +11,8 @@ const FIELDS = [
   ['tagline', 'Tagline', 'Under the logo on the home screen.', LIMITS.tagline],
   ['reception', 'Reception', 'e.g. Dial 0', LIMITS.hotelField],
   ['roomService', 'Room service', 'e.g. Dial 1', LIMITS.hotelField],
-  ['wifiName', 'Wi-Fi network name', 'The guest network is open, so no password is shown.', LIMITS.hotelField],
+  ['wifiName', 'Wi-Fi network name', 'As guests see it in their Wi-Fi settings.', LIMITS.hotelField],
+  ['wifiPassword', 'Wi-Fi password', 'Leave empty if the network is open. Anything typed here is shown to guests and stored in a public place.', LIMITS.hotelField],
   ['checkout', 'Check-out', 'e.g. 11:00am', LIMITS.hotelField],
 ];
 
@@ -27,7 +28,6 @@ export function mount(host, app) {
     form.append(textField({ id: uid('h'), label, help, limit, value: model.draft.hotel[key] || '', onInput: (v) => model.commit(`Edit ${label.toLowerCase()}`, (d) => { d.hotel[key] = v; }, { origin: 'hotel', coalesce: 'hotel.' + key }) }));
   }
   main.append(form);
-  main.append(el('p.muted.small', { style: { marginTop: '10px' } }, 'The Wi-Fi password field is kept empty on purpose: the guest network has no password and this repository is public.'));
 
   aside.append(el('h3', 'Contact & Help on the TV'));
   const tvHost = el('div');

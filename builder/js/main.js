@@ -1,12 +1,14 @@
 // Cave Builder: boot, top bar, screens, autosave.
 
 import { config } from '../config.js';
-import { el, clear, debounce, fmtTime, plural } from './util.js';
+import { el, clear, debounce, fmtTime, plural, randomId } from './util.js';
 import { model } from './model.js';
 import { BrowserStore } from './stores/browser.js';
 import { GitHubStore } from './stores/github.js';
 import { MediaRegistry } from './media.js';
 import { describeChanges } from './changes.js';
+import { buildBundle } from './bundle.js';
+import { threeWayMerge } from './merge.js';
 import { validateAll } from './validate.js';
 import { toast, modal, el as _el } from './ui.js';
 import * as home from './screens/home.js';
@@ -40,22 +42,94 @@ export const app = {
   },
 
   changes() { return describeChanges(model.published?.bundle, model.draft); },
-  validation() { return validateAll(model.draft, { imageSize: (src) => this.media.size(src) }); },
+  validation() { return validateAll(model.draft, { imageSize: (src) => this.media.size(src), imageKnown: (src) => this.media.known(src) }); },
+
+  /**
+   * Everything the Publish screen needs: the bundle that would go live, which
+   * pages are held back (and whether their published copy stays), the change
+   * entries marked `held` when they are not going live, and the summary that
+   * goes into history.json (held changes left out).
+   */
+  plan() {
+    const validation = this.validation();
+    const { bundle, heldBack, frozen } = buildBundle(model.draft, { held: validation, published: model.published?.bundle });
+    const { entries } = this.changes();
+    // A page deleted from under a held-back page is still in the bundle (the
+    // published copy keeps it), so its removal is held too.
+    const keptHeld = new Set(heldBack.filter((h) => h.kept).map((h) => h.id));
+    const publishedParents = new Map();
+    const walk = (page, parentId) => { publishedParents.set(page.id, parentId); for (const c of page.children || []) walk(c, page.id); };
+    if (model.published?.bundle?.home) walk(model.published.bundle.home, null);
+    const underHeld = (id) => { for (let p = publishedParents.get(id); p; p = publishedParents.get(p)) if (keptHeld.has(p)) return true; return false; };
+    for (const e of entries) e.held = frozen.has(e.id) || (e.kind === 'removed' && underHeld(e.id));
+    // "Order is now" lists what will actually be in the bundle.
+    const bundlePages = new Map();
+    const walkB = (page) => { bundlePages.set(page.id, page); for (const c of page.children || []) walkB(c); };
+    walkB(bundle.home);
+    for (const e of entries) {
+      const bp = bundlePages.get(e.id);
+      if (!bp) continue;
+      e.lines = e.lines.map((l) => (l.startsWith('Order is now:') ? `Order is now: ${(bp.children || []).map((c) => c.title || '(untitled)').join(', ')}` : l));
+    }
+    const live = entries.filter((e) => !e.held);
+    const summary = live.flatMap((e) => e.lines.map((l) => `${e.path}: ${l}`));
+    const stop = [];
+    if (!(bundle.home.children || []).length) stop.push('Nothing would show on the TV: every section is hidden or held back. Show or fix at least one section.');
+    for (const b of validation.get('home')?.blockers || []) stop.push(`Home: ${b.message}`);
+    for (const b of validation.get('hotel')?.blockers || []) stop.push(`Hotel details: ${b.message}`);
+    return { validation, bundle, heldBack, frozen, entries, live, summary, stop, canPublish: live.length > 0 && !stop.length };
+  },
 
   publisherName() { return this.browser.prefs().by || ''; },
 };
 
+// Each tab signs its saves, so a tab can tell its own save from another's.
+const TAB_ID = randomId(8);
+let saveBlocked = false;   // another tab saved over this tab's draft: stop overwriting it
+let touched = false;       // this tab has made edits since it loaded
+
 const save = debounce(() => {
-  app.browser.saveDraft({ doc: model.draft, basedOn: model.basedOn, savedAt: new Date().toISOString() });
+  if (saveBlocked) return;
+  app.browser.saveDraft({ doc: model.draft, basedOn: model.basedOn, savedAt: new Date().toISOString(), tab: TAB_ID });
   model.savedAt = new Date().toISOString();
   renderSavedState();
 }, 400);
 
+// Keystrokes in the last moments before a reload or a tab switch must not be lost.
+window.addEventListener('pagehide', () => save.flush());
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') save.flush(); });
+
 function renderSavedState() {
   const s = document.getElementById('saved-state');
   if (!s) return;
-  s.textContent = model.savedAt ? `Saved ${fmtTime(new Date(model.savedAt))}` : 'Nothing changed yet';
+  s.textContent = saveBlocked ? 'Not saving: changed in another tab' : model.savedAt ? `Saved ${fmtTime(new Date(model.savedAt))}` : 'Nothing changed yet';
 }
+
+/** Another tab of the Builder saved the draft. Adopt it, or warn and stop saving. */
+function otherTabSaved(record) {
+  if (!record || record.tab === TAB_ID) return;
+  if (!touched) {
+    model.load(model.published, record);
+    renderScreen();
+    toast('Updated with the changes made in another tab.', { ms: 5000 });
+    return;
+  }
+  if (saveBlocked) return;
+  saveBlocked = true;
+  save.cancel();
+  renderSavedState();
+  let bar = document.getElementById('tab-warning');
+  if (bar) return;
+  bar = el('div#tab-warning.note.block', { style: { position: 'fixed', left: '16px', right: '16px', top: '62px', zIndex: '150' } },
+    el('strong', 'This draft was changed in another tab. '), 'To keep both sets of changes safe, this tab has stopped saving. ',
+    el('button.btn.sm', { type: 'button', onclick: () => location.reload() }, 'Reload to see the other tab\'s changes'), ' ',
+    el('button.btn.sm', { type: 'button', onclick: () => { saveBlocked = false; bar.remove(); save(); } }, 'Keep mine and overwrite the other tab'));
+  document.body.append(bar);
+}
+window.addEventListener('storage', (e) => {
+  if (e.key !== 'cave-builder.draft' || !e.newValue) return;
+  try { otherTabSaved(JSON.parse(e.newValue)); } catch { /* ignore */ }
+});
 
 function topBar() {
   const bar = el('header.appbar', { role: 'banner' });
@@ -67,7 +141,7 @@ function topBar() {
   bar.append(nav, el('span.spacer'));
   const n = app.changes().entries.length;
   bar.append(el('span#saved-state.muted.small'));
-  bar.append(el('span.pill' + (n ? '.acc' : ''), n ? `${plural(n, 'change')} not yet published` : 'Nothing to publish'));
+  bar.append(el('span.pill' + (n ? '.acc' : ''), { id: 'change-count' }, n ? `${plural(n, 'change')} not yet published` : 'Nothing to publish'));
   bar.append(el('button.btn.pri', { type: 'button', onclick: () => app.go('publish') }, 'Review & publish'));
   return bar;
 }
@@ -132,12 +206,12 @@ async function boot() {
   const saved = app.browser.loadDraft();
   model.load(published, saved);
   if (saved && published && saved.basedOn?.revision !== published.version.revision) {
-    model.basedOn = { revision: published.version.revision, bundle: published.version.bundle };
-    toast(`The published content has changed since you started (now revision ${published.version.revision}). Your draft is kept; the change list is now against the new publish.`, { ms: 12000 });
+    await rebaseDraft(saved, published);
   }
 
   model.on((ev) => {
     if (ev.type === 'change') {
+      touched = true;
       save();
       if (app.current?.update) app.current.update(ev);
       const bar = document.querySelector('.appbar');
@@ -160,6 +234,36 @@ async function boot() {
   if (document.fonts?.load) { document.fonts.load('500 72px Cinzel'); document.fonts.load('400 30px Inter'); }
   renderShell();
   renderScreen();
+}
+
+/**
+ * Someone published while this draft was open. Replay this browser's own
+ * changes onto the newer publish; where both changed the same thing, the
+ * newer publish wins and the user is told exactly what was kept.
+ */
+async function rebaseDraft(saved, published) {
+  const rev = published.version.revision;
+  let base = null;
+  if (saved.basedOn?.bundle) { try { base = await app.github.fetchBundle(saved.basedOn.bundle); } catch { base = null; } }
+  if (!base) {
+    model.basedOn = { revision: rev, bundle: published.version.bundle };
+    toast(`Someone published while you were away (now publish ${rev}) and the version you started from could not be fetched. Check the Publish list carefully: anything marked there would replace their work.`, { error: true, ms: 20000 });
+    return;
+  }
+  const { doc, conflicts, applied } = threeWayMerge(base, published.bundle, saved.doc);
+  model.draft = doc;
+  model.basedOn = { revision: rev, bundle: published.version.bundle };
+  model.undoStack = [];
+  save();
+  const body = el('div');
+  body.append(el('p', `Someone else published while you were away (now publish ${rev}). ${applied ? `Your ${plural(applied, 'change')} ${applied === 1 ? 'has' : 'have'} been carried over onto it.` : 'Nothing of yours needed carrying over.'}`));
+  if (conflicts.length) {
+    body.append(el('p', { style: { marginTop: '8px' } }, el('strong', 'Kept from the newer publish (your version was dropped):')));
+    const ul = el('ul.small');
+    for (const c of conflicts) ul.append(el('li', c));
+    body.append(ul);
+  }
+  modal({ title: 'Published content changed', body, actions: [{ label: 'OK', primary: true }] });
 }
 
 // Anything unexpected is shown on the page, so a tester can report it.

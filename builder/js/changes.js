@@ -73,7 +73,14 @@ function diffPage(a, b) {
       else lines.push(`${label}: ${q(short(a[k]))} → ${q(short(b[k]))}`);
     }
   }
-  if (!deepEqual(a.facts || [], b.facts || [])) lines.push(`Facts: now ${(b.facts || []).length} points`);
+  const fa = a.facts || [], fb = b.facts || [];
+  if (!deepEqual(fa, fb)) {
+    if (fa.length === fb.length) fb.forEach((f, i) => { if (f !== fa[i]) lines.push(`Fact ${i + 1}: ${arrow(fa[i], f)}`); });
+    else {
+      for (const f of fb) if (!fa.includes(f)) lines.push(`New fact: ${short(f, 60)}`);
+      for (const f of fa) if (!fb.includes(f)) lines.push(`Fact removed: ${short(f, 60)}`);
+    }
+  }
   const ha = (a.hours || []).map((h) => `${h.label}: ${h.value}`);
   const hb = (b.hours || []).map((h) => `${h.label}: ${h.value}`);
   if (!deepEqual(ha, hb)) {
@@ -89,10 +96,13 @@ function diffPage(a, b) {
   if (!deepEqual(a.images || [], b.images || [])) lines.push(`Gallery: now ${(b.images || []).length} photos`);
   if (a.sections || b.sections) diffMenu(a, b, lines);
   if (a.items || b.items) diffList(a, b, lines);
+  // Reordered if the pages present on both sides are no longer in the same
+  // relative order, whatever was added or removed around them.
   const ka = (a.children || []).map((c) => c.id);
   const kb = (b.children || []).map((c) => c.id);
-  const sameSet = ka.length === kb.length && ka.every((id) => kb.includes(id));
-  if (sameSet && ka.join() !== kb.join()) {
+  const commonA = ka.filter((id) => kb.includes(id));
+  const commonB = kb.filter((id) => ka.includes(id));
+  if (commonA.join() !== commonB.join()) {
     lines.push(`Order is now: ${(b.children || []).map((c) => c.title || '(untitled)').join(', ')}`);
   }
   return lines;

@@ -40,6 +40,7 @@ export function mount(host, app, params) {
     card.addEventListener('click', () => select(page.id));
     card.addEventListener('dblclick', () => app.go('editor', { page: page.id }));
     card.addEventListener('keydown', (e) => {
+      if (e.target !== card) return; // the eye button handles its own keys
       if (e.key === 'Enter') app.go('editor', { page: page.id });
       if (e.key === ' ') { e.preventDefault(); select(page.id); }
       if (e.key === 'ArrowLeft' && index > 0) { e.preventDefault(); move(parentId, index, index - 1); }
@@ -59,7 +60,13 @@ export function mount(host, app, params) {
     return [el('div.lab', label, el('span', `${plural(kids.filter((k) => !k.hidden).length, 'showing', 'showing')} · ${max} at most`)), row];
   }
 
+  function refocus(id) {
+    const card = main.querySelector(`.strip-card[data-id="${CSS.escape(id)}"]`);
+    if (card) card.focus({ preventScroll: true });
+  }
+
   function renderMain() {
+    const hadFocus = main.contains(document.activeElement) ? document.activeElement.closest('.strip-card')?.dataset.id : null;
     clear(main);
     main.append(el('div.row.between', el('div', el('h1', 'Home'), el('p.muted', 'The TV\'s home screen, in the order guests see it. Drag a strip to move it (or use the arrow keys). Click a strip to see it; double-click to edit it.'))));
     main.append(...stripsRow(model.draft.home, 'Home', true));
@@ -75,6 +82,7 @@ export function mount(host, app, params) {
       }
     }
     main.append(el('p.muted.small', { style: { marginTop: '18px' } }, 'A section with one page opens straight to that page, as Contact & Help does today. Hidden pages stay in the Builder but are left out of the TV.'));
+    if (hadFocus) refocus(hadFocus);
   }
 
   function renderAside() {
@@ -137,10 +145,12 @@ export function mount(host, app, params) {
   }
 
   // ---- actions ----
-  function select(id) { state.selected = id; renderMain(); renderPreview(); renderSummary(); }
+  function select(id) { state.selected = id; renderMain(); renderPreview(); renderSummary(); refocus(id); }
 
   function move(parentId, from, to) {
+    const id = model.find(parentId)?.page.children?.[from]?.id;
     model.commit('Reorder strips', (d) => movePage(d, parentId, from, to), { origin: 'home' });
+    if (id) refocus(id);
   }
 
   function toggleHidden(id) {
@@ -150,6 +160,8 @@ export function mount(host, app, params) {
       const p = model.find(id, d).page;
       if (p.hidden) delete p.hidden; else p.hidden = true;
     }, { origin: 'home' });
+    const eye = main.querySelector(`.strip-card[data-id="${CSS.escape(id)}"] .eye`);
+    if (eye) eye.focus({ preventScroll: true }); else refocus(id);
   }
 
   async function rename(id) {
@@ -185,16 +197,25 @@ export function mount(host, app, params) {
     const types = isHome ? ['hub', 'info', 'menu', 'gallery', 'list', 'contact'] : ['info', 'menu', 'gallery', 'list'];
     const buttons = types.map((t) => el('button', { type: 'button', class: t === type ? 'on' : '', onclick: () => { type = t; buttons.forEach((b) => b.classList.toggle('on', b.dataset.t === t)); }, dataset: { t } }, el('b', PAGE_TYPES[t].label), el('span', PAGE_TYPES[t].hint)));
     tpl.append(...buttons);
-    const field = textField({ label: 'Title', value: '', limit: LIMITS.title, id: uid('t'), placeholder: isHome ? 'e.g. Weddings' : 'e.g. Sunday Roast', onInput: (v) => { title = v; } });
+    const siblings = (parent.children || []).map((c) => (c.title || '').trim().toLowerCase());
+    const dupe = el('div.help', { style: { color: 'var(--amber)' } });
+    const field = textField({ label: 'Title', value: '', limit: LIMITS.title, id: uid('t'), placeholder: isHome ? 'e.g. Weddings' : 'e.g. Sunday Roast', onInput: (v) => {
+      title = v;
+      dupe.textContent = siblings.includes(v.trim().toLowerCase()) ? `There is already ${isHome ? 'a section' : 'a page here'} called "${v.trim()}". Guests could not tell them apart; give it its own name.` : '';
+    } });
+    const showing = (parent.children || []).filter((c) => !c.hidden).length;
+    const max = isHome ? LIMITS.sectionsMax : LIMITS.itemsMax;
+    if (showing >= max) { toast(`The TV fits ${max} ${isHome ? 'sections' : 'pages in a section'} at most. Hide or delete one first.`, { error: true }); return; }
     const m = modal({
       title: isHome ? 'Add a section to Home' : `Add a page inside ${parent.title}`,
-      body: el('div', el('p.muted.small', 'Choose what kind of page. Every kind comes with example text to replace.'), tpl, field),
+      body: el('div', el('p.muted.small', 'Choose what kind of page. Every kind comes with example text to replace.'), tpl, field, dupe),
       actions: [{ label: 'Cancel' }, { label: 'Add', primary: true, onClick: () => {
         const t = title.trim();
         if (!t) { field.input.focus(); return false; }
         const page = newPage(type, t, model.newId(t));
         model.commit(`Add ${t}`, (d) => addPage(d, parentId, page), { origin: 'home' });
         select(page.id);
+        setTimeout(() => refocus(page.id), 0);
         toast(`Added ${t}. It needs a photo before it can be published.`, { action: 'Edit page', onAction: () => app.go('editor', { page: page.id }) });
         return true;
       } }],

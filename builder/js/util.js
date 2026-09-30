@@ -110,8 +110,11 @@ export function randomId(len = 5) {
 
 export function debounce(fn, ms) {
   let t = null;
-  const wrapped = (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
-  wrapped.flush = () => { clearTimeout(t); };
+  let pending = null;
+  const wrapped = (...args) => { clearTimeout(t); pending = args; t = setTimeout(() => { pending = null; fn(...args); }, ms); };
+  /** Runs the waiting call now (if any). */
+  wrapped.flush = () => { if (pending) { const args = pending; clearTimeout(t); pending = null; fn(...args); } };
+  wrapped.cancel = () => { clearTimeout(t); pending = null; };
   return wrapped;
 }
 

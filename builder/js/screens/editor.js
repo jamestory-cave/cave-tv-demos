@@ -66,10 +66,15 @@ export function mount(host, app, params) {
   const found = model.find(pageId);
   if (!found) { host.append(el('div.empty', 'That page no longer exists. ', el('button.btn.link', { type: 'button', onclick: () => app.go('home') }, 'Back to Home'))); return {}; }
 
-  const state = { part: 'heading', field: null, mode: 'edit', safe: false, view: 'draft', focusField: null };
+  const compact = () => window.innerWidth <= 1200;
+  const state = { part: 'heading', field: null, mode: 'edit', safe: false, view: 'draft', focusField: null, showRemote: compact() || matchMedia('(pointer: coarse)').matches };
   let preview = null;
   const page = () => model.find(pageId)?.page;
-  const commit = (label, fn, key) => model.commit(label, (d) => fn(model.find(pageId, d).page, d), { origin: 'editor', coalesce: key, pageId });
+  const commit = (label, fn, key) => {
+    model.commit(label, (d) => fn(model.find(pageId, d).page, d), { origin: 'editor', coalesce: key, pageId });
+    // Typing while "On TVs now" is showing: flip back to the draft so the change is seen.
+    if (state.view === 'published') { state.view = 'draft'; renderCentre(); }
+  };
 
   const sub = el('div.sub');
   const rail = el('div.rail');
@@ -138,10 +143,16 @@ export function mount(host, app, params) {
     preview.setSafeArea(state.safe);
     refreshPreview(true);
     preview.setMode(state.mode);
-    wrap.append(remotePad((k) => preview.key(k)));
+    wrap.append(remotePad((k) => preview.key(k), { wide: compact() }));
     preview.fit();
-    centre.append(el('div.tvcap', el('span.muted.small', state.mode === 'edit' ? 'Click anything on the TV to edit it. Click a strip to open it.' : 'Arrow keys move, Enter selects, Esc is Menu. Click the TV first if the keys do nothing.'),
-      el('span.muted.tiny', `1920 × 1080, shown at ${Math.round((tvHost.clientWidth || 800) / 1920 * 100)}%`)));
+    const scaleCap = el('span.muted.tiny');
+    const showScale = () => { scaleCap.textContent = `1920 × 1080, shown at ${Math.round((preview.viewport.clientWidth || 800) / 1920 * 100)}%`; };
+    preview.onFit = showScale;
+    showScale();
+    centre.append(el('div.tvcap', el('span.muted.small', state.mode === 'edit' ? 'Click anything on the TV to edit it. Click a strip to open it.' : 'Arrow keys move, Enter selects, Esc is Menu. Click the TV first if the keys do nothing.'), scaleCap));
+    if (state.view === 'published' && !model.find(pageId, model.published?.bundle)) {
+      centre.append(el('div.note.small', { style: { marginTop: '8px' } }, 'Not on TVs yet. This page is new; it goes to the TV when you publish.'));
+    }
   }
 
   function refreshPreview(navigate = false) {
@@ -230,7 +241,8 @@ export function mount(host, app, params) {
     const thumb = el('div.thumb');
     const url = app.media.url(p.image, 800);
     if (url) thumb.style.backgroundImage = `url("${url}")`;
-    box.append(el('div.photo-pick', thumb, el('div', el('div.small', app.media.label(p.image)), el('div.row', { style: { marginTop: '6px' } },
+    const missing = p.image && !app.media.known(p.image);
+    box.append(el('div.photo-pick', thumb, el('div', el('div.small', { style: missing ? { color: 'var(--red)', fontWeight: '600' } : {} }, missing ? 'Photo missing: it is no longer in Media. Choose another.' : app.media.label(p.image)), el('div.row', { style: { marginTop: '6px' } },
       el('button.btn.sm', { type: 'button', onclick: () => pickPhoto(app, { onPick: (src) => commit('Change photo', (pg) => { pg.image = src; }) }) }, 'Choose photo'),
       p.image && p.id !== 'home' ? el('button.btn.sm', { type: 'button', onclick: () => commit('Remove photo', (pg) => { delete pg.image; }) }, 'Remove') : null))));
     box.append(el('p.help', 'One photo does both jobs: the strip on the way in and the background of the page. Landscape, 1920 px wide or more.'));

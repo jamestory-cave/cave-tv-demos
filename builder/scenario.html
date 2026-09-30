@@ -30,6 +30,19 @@ setTimeout(() => {
     dbg('bundle omits deck: ' + !eat.children.some((p) => p.id === 'deck') + ' | golf held: ' + b.heldBack.map((h) => h.id).join(',') + ' | cowgirl back: ' + !!findIn(model.draft, 'cowgirl'));
     dbg('summary: ' + app.changes().summary.join(' | '));
   }
+  if (s.includes('held')) {
+    model.commit('Edit text', (d) => { findIn(d, 'firepit').page.body = 'x'.repeat(600); }, { origin: 'test' });
+    model.commit('Edit hotel', (d) => { d.hotel.checkout = '11:30am'; }, { origin: 'test' });
+    model.commit('Edit title', (d) => { findIn(d, 'firepit-menu').page.title = 'Firepit Menu (edited)'; }, { origin: 'test' });
+    const plan = app.plan();
+    dbg('firepit in bundle: ' + !!findIn(plan.bundle, 'firepit') + ' body length ' + findIn(plan.bundle, 'firepit').page.body.length + ' | menu title ' + findIn(plan.bundle, 'firepit-menu').page.title + ' | live: ' + plan.summary.join(' | ') + ' | held entries: ' + plan.entries.filter((e) => e.held).map((e) => e.path).join(', '));
+  }
+  if (s.includes('tabs')) {
+    if (s.includes('touched')) model.commit('Edit hotel', (d) => { d.hotel.checkout = '10:30am'; }, { origin: 'test' });
+    const other = { doc: JSON.parse(JSON.stringify(model.published.bundle)), basedOn: model.basedOn, savedAt: new Date().toISOString(), tab: 'other-tab' };
+    other.doc.hotel.reception = 'Dial 9 (from tab 2)';
+    setTimeout(() => window.dispatchEvent(new StorageEvent('storage', { key: 'cave-builder.draft', newValue: JSON.stringify(other) })), 1200);
+  }
   if (s.includes('dismiss')) app.browser.setPref('bannerDismissed', true);
   const to = q.get('go');
   if (to) { const [screen, page] = to.split('/'); app.go(screen, page ? (screen === 'menus' ? { menu: page } : { page }) : {}); }

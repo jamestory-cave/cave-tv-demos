@@ -132,6 +132,7 @@ export class TVPreview {
   fit() {
     const s = this.viewport.clientWidth / W;
     this.stage.style.transform = `scale(${s})`;
+    if (this.onFit) this.onFit(s);
   }
 
   // ---- content -------------------------------------------------------------

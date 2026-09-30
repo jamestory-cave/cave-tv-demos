@@ -68,24 +68,58 @@ export function cleanPage(page, held = null) {
   return out;
 }
 
+function indexById(home) {
+  const map = new Map();
+  const walk = (page) => { map.set(page.id, page); for (const c of page.children || []) walk(c); };
+  if (home) walk(home);
+  return map;
+}
+
+/** Ids of a page and everything under it. */
+export function subtreeIds(page) {
+  const ids = [];
+  const walk = (p) => { ids.push(p.id); for (const c of p.children || []) walk(c); };
+  walk(page);
+  return ids;
+}
+
 /**
- * Builds the bundle. `held` is the Map from validateAll (pages with blockers
- * are left out along with everything under them). Returns {bundle, heldBack}.
+ * Builds the bundle.
+ *   held       Map from validateAll: a page with blockers is "held back"
+ *   published  the bundle on TVs now (its pages are the live copies)
+ * A held page that is already on TVs keeps its published copy, children and
+ * all: the draft for it does not go live, but nothing is taken off the TV.
+ * Only a new page with blockers is left out. Returns
+ *   { bundle, heldBack: [{id, blockers, kept}], frozen: Set of ids whose draft is not going live }
  */
-export function buildBundle(doc, { revision, held } = {}) {
+export function buildBundle(doc, { revision, held, published } = {}) {
   const hotel = {};
   for (const k of HOTEL_KEYS) hotel[k] = doc.hotel?.[k] ?? '';
-  const home = cleanPage(doc.home, null) || { id: 'home', type: 'home', title: doc.home.title || '' };
-  // Held pages are removed after cleaning so the home page itself is never lost.
-  const drop = (page) => {
-    page.children = (page.children || []).filter((c) => !held?.get(c.id)?.held).map(drop);
-    if (!page.children.length) delete page.children;
-    return page;
-  };
-  const bundle = { version: revision ?? doc.version ?? 1, hotel, home: held ? drop(home) : home };
+  const live = indexById(published?.home);
+  const frozen = new Set();
   const heldBack = [];
-  if (held) for (const [id, r] of held) if (r.held && id !== 'hotel') heldBack.push({ id, blockers: r.blockers });
-  return { bundle, heldBack };
+
+  const build = (page) => {
+    if (page.hidden) return null;
+    const r = held?.get(page.id);
+    if (r?.held && page.id !== 'home') {
+      const kept = live.get(page.id);
+      for (const id of subtreeIds(page)) frozen.add(id);
+      heldBack.push({ id: page.id, blockers: r.blockers, kept: !!kept });
+      // The published copy is already in bundle shape; deep-copied so the
+      // published bundle in memory is never touched.
+      return kept ? JSON.parse(JSON.stringify(kept)) : null;
+    }
+    const flat = cleanPage({ ...page, children: [] }) || { id: page.id, type: page.type, title: page.title || '' };
+    const kids = (page.children || []).map(build).filter(Boolean);
+    if (kids.length) flat.children = kids;
+    const out = {};
+    for (const k of PAGE_KEYS) if (k in flat) out[k] = flat[k];
+    return out;
+  };
+  const home = build({ ...doc.home, hidden: false });
+  const bundle = { version: revision ?? doc.version ?? 1, hotel, home };
+  return { bundle, heldBack, frozen };
 }
 
 /** Pretty JSON, 2-space, trailing newline, as seed.py writes it. */

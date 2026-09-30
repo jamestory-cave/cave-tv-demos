@@ -51,6 +51,12 @@ export function validatePage(page, ctx = {}) {
     else if (near(value, limit)) warn(field, `${label} is close to its limit (${value.length} of ${limit})`);
   };
   const imageSize = ctx.imageSize || (() => null);
+  const imageKnown = ctx.imageKnown || (() => true);
+  const photo = (field, src, use, what) => {
+    if (!imageKnown(src)) { block(field, `${what}: photo missing. It is not in Media any more; choose another`); return; }
+    const why = photoProblem(imageSize(src), use);
+    if (why) block(field, `${what} is too small for ${use === 'card' ? 'a card' : 'full screen'} (${why})`);
+  };
 
   if (!page.title || !page.title.trim()) block('title', 'No title');
   text('title', page.title, LIMITS.title, 'Title');
@@ -59,10 +65,7 @@ export function validatePage(page, ctx = {}) {
   text('body', page.body, LIMITS.body, 'Text');
 
   if (ctx.isStrip && page.type !== 'home' && !page.image) block('image', 'This strip has no photo');
-  if (page.image) {
-    const why = photoProblem(imageSize(page.image));
-    if (why) block('image', `Photo is too small for full screen (${why})`);
-  }
+  if (page.image) photo('image', page.image, 'full', 'Photo');
 
   (page.facts || []).forEach((f, i) => text(`facts.${i}`, f, LIMITS.fact, `Fact ${i + 1}`));
   if ((page.facts || []).length > LIMITS.factsMax) warn('facts', `More than ${LIMITS.factsMax} facts; the page gets long`);
@@ -79,23 +82,27 @@ export function validatePage(page, ctx = {}) {
     if (!page.qr.label) warn('qr.label', 'The QR link has no line saying what it does');
   }
 
+  const dupes = (list, key) => { const seen = new Map(); const out = new Set(); for (const x of list) { const k = (x[key] || '').trim().toLowerCase(); if (!k) continue; if (seen.has(k)) out.add(k); seen.set(k, true); } return out; };
+  const secDupes = dupes(page.sections || [], 'title');
   (page.sections || []).forEach((s, si) => {
     text(`sections.${si}.title`, s.title, LIMITS.sectionTitle, `Menu part ${si + 1} name`);
+    if (secDupes.has((s.title || '').trim().toLowerCase())) warn(`sections.${si}.title`, `Two menu parts are called "${s.title}"; the TV tells them apart by name, so give each its own`);
+    const dishDupes = dupes((s.items || []).filter((d) => !d.hidden), 'name');
+    const warnedDupes = new Set();
     if (!s.title) block(`sections.${si}.title`, `Menu part ${si + 1} has no name`);
     text(`sections.${si}.note`, s.note, LIMITS.sectionNote, `Menu part ${si + 1} note`);
     (s.items || []).forEach((d, di) => {
       const f = `sections.${si}.items.${di}`;
       if (!d.name) block(`${f}.name`, `A dish in ${s.title || 'a menu part'} has no name`);
+      const key = (d.name || '').trim().toLowerCase();
+      if (!d.hidden && dishDupes.has(key) && !warnedDupes.has(key)) { warnedDupes.add(key); warn(`${f}.name`, `Two dishes in ${s.title || 'this part'} are called "${d.name}"; the TV tells them apart by name, so give each its own`); }
       text(`${f}.name`, d.name, LIMITS.dishName, `Dish "${d.name || ''}"`);
       text(`${f}.description`, d.description, LIMITS.dishDescription, `Description of ${d.name || 'a dish'}`);
       if (!d.hidden && !d.price) warn(`${f}.price`, `${d.name || 'A dish'} has no price`);
     });
   });
 
-  (page.images || []).forEach((src, i) => {
-    const why = photoProblem(imageSize(src));
-    if (why) block(`images.${i}`, `Gallery photo ${i + 1} is too small for full screen (${why})`);
-  });
+  (page.images || []).forEach((src, i) => photo(`images.${i}`, src, 'full', `Gallery photo ${i + 1}`));
   if (page.type === 'gallery' && !(page.images || []).length) warn('images', 'This gallery has no photos yet');
 
   (page.items || []).forEach((it, i) => {
@@ -105,15 +112,16 @@ export function validatePage(page, ctx = {}) {
     text(`${f}.subtitle`, it.subtitle, LIMITS.cardSubtitle, `Card "${it.title || ''}" line`);
     text(`${f}.body`, it.body, LIMITS.cardBody, `Card "${it.title || ''}" text`);
     text(`${f}.meta`, it.meta, LIMITS.cardMeta, `Card "${it.title || ''}" date or distance`);
-    if (it.image) {
-      const why = photoProblem(imageSize(it.image), 'card');
-      if (why) block(`${f}.image`, `Photo on card "${it.title}" is too small (${why})`);
-    } else warn(`${f}.image`, `Card "${it.title || i + 1}" has no photo`);
+    if (it.image) photo(`${f}.image`, it.image, 'card', `Photo on card "${it.title}"`);
+    else warn(`${f}.image`, `Card "${it.title || i + 1}" has no photo`);
   });
 
   if (page.type === 'hub' && !(page.children || []).some((c) => !c.hidden)) warn('children', 'This section has no pages a guest can open');
-  if (page.type === 'home' && (page.children || []).filter((c) => !c.hidden).length > LIMITS.sectionsMax) warn('children', `More than ${LIMITS.sectionsMax} sections; the strips get thin`);
-  if (page.type !== 'home' && (page.children || []).filter((c) => !c.hidden).length > LIMITS.itemsMax) warn('children', `More than ${LIMITS.itemsMax} pages inside; the strips get thin`);
+  const shown = (page.children || []).filter((c) => !c.hidden);
+  if (page.type === 'home' && shown.length > LIMITS.sectionsMax) block('children', `${shown.length} sections showing; the TV fits ${LIMITS.sectionsMax} at most. Hide or delete some`);
+  if (page.type !== 'home' && shown.length > LIMITS.itemsMax) block('children', `${shown.length} pages showing inside; the TV fits ${LIMITS.itemsMax} at most. Hide or delete some`);
+  const kidDupes = dupes(shown, 'title');
+  if (kidDupes.size) warn('children', `Two ${page.type === 'home' ? 'sections' : 'pages'} here have the same name (${[...kidDupes].join(', ')}); guests cannot tell them apart and the TV uses names in its path line`);
   if (page.type !== 'home' && page.type !== 'hub' && !hasStop(page)) warn('body', 'Page has nothing a guest can select; the remote will rest on Back');
 
   return { blockers, warnings };

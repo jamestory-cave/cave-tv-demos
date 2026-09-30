@@ -40,6 +40,7 @@ import { describeChanges } from './js/changes.js';
 import { validateAll } from './js/validate.js';
 import { GitHubStore } from './js/stores/github.js';
 import { encodeQR, qrSVG } from './js/preview/qr.js';
+import { threeWayMerge } from './js/merge.js';
 
 const results = document.getElementById('results');
 let pass = 0, fail = 0;
@@ -82,10 +83,22 @@ async function run() {
   let ch = describeChanges(published.bundle, model.draft);
   check('Price change is listed in plain English', ch.summary.some((s) => /Firepit Menu: Smoked bone marrow: £12 → £14/.test(s)), ch.summary.join(' | '));
 
-  // 3. Reorder two sections.
+  // 3. Reorder two sections; still listed when a section is added or removed as well (QA-3).
   model.commit('reorder', (d) => movePage(d, 'home', 0, 1));
   ch = describeChanges(published.bundle, model.draft);
   check('Reordering sections is listed', ch.summary.some((s) => /^Home: Order is now: Eat & Drink, Your Room/.test(s)), ch.summary.find((s) => s.startsWith('Home:')) || 'not found');
+  model.commit('add', (d) => addPage(d, 'home', { id: 'weddings-test1', type: 'hub', title: 'Weddings', children: [] }));
+  ch = describeChanges(published.bundle, model.draft);
+  check('Reorder is still listed after a section is added (QA-3)', ch.summary.some((s) => /^Home: Order is now:/.test(s)) && ch.summary.some((s) => /Weddings: New section/.test(s)));
+  model.commit('remove', (d) => removePage(d, 'weddings-test1'));
+  model.commit('delete one', (d) => removePage(d, 'explore'));
+  ch = describeChanges(published.bundle, model.draft);
+  check('Reorder is still listed after a section is deleted (QA-3)', ch.summary.some((s) => /^Home: Order is now:/.test(s)) && ch.summary.some((s) => /Explore Kent: Deleted/.test(s)));
+  model.undo();
+  model.commit('fact', (d) => { findIn(d, 'golf').page.facts[1] = 'Club hire, buggies and trolleys'; });
+  ch = describeChanges(published.bundle, model.draft);
+  check('A changed fact is named (QA-7)', ch.summary.some((s) => /Golf: Fact 2: Club hire and buggies available → Club hire, buggies and trolleys/.test(s)), ch.summary.find((s) => /Fact/.test(s)));
+  model.undo();
 
   // 4. Hide The Deck.
   model.commit('hide', (d) => { findIn(d, 'deck').page.hidden = true; });
@@ -108,16 +121,70 @@ async function run() {
   model.undo();
   check('Undo stack restores the previous document', canonical(model.draft) === canonical(before));
 
-  // 6. Blocked page left out.
-  model.commit('break', (d) => { findIn(d, 'golf').page.title = ''; });
+  // 6. Held-back pages: a live page keeps its published copy, a new page is left out (QA-1).
+  model.commit('break', (d) => { findIn(d, 'golf').page.title = ''; findIn(d, 'golf').page.children[0].title = 'The Course (draft edit)'; });
   const v = validateAll(model.draft, { imageSize: () => null });
-  const b3 = buildBundle(model.draft, { revision: 3, held: v });
-  check('A page with no title is held back and left out of the bundle', v.get('golf').held && !b3.bundle.home.children.some((p) => p.id === 'golf') && b3.heldBack.some((h) => h.id === 'golf'));
+  const b3 = buildBundle(model.draft, { revision: 3, held: v, published: published.bundle });
+  const golfOut = b3.bundle.home.children.find((p) => p.id === 'golf');
+  const golfPub = published.bundle.home.children.find((p) => p.id === 'golf');
+  check('A live page with a blocker keeps its published copy, children included (QA-1)', v.get('golf').held && golfOut && canonical(golfOut) === canonical(golfPub) && b3.heldBack.find((h) => h.id === 'golf')?.kept === true && b3.frozen.has('golf-gallery'));
+  check('Held changes are not counted as going live', b3.frozen.has('golf') && !JSON.stringify(b3.bundle).includes('(draft edit)'));
+  {
+    // RT-1: a child deleted from under a held page is held too (the published copy keeps it).
+    model.commit('delete under held', (d) => removePage(d, 'golf-gallery'));
+    const vh = validateAll(model.draft, { imageSize: () => null });
+    const bh = buildBundle(model.draft, { revision: 3, held: vh, published: published.bundle });
+    const entriesH = describeChanges(published.bundle, model.draft).entries;
+    const keptHeld = new Set(bh.heldBack.filter((h) => h.kept).map((h) => h.id));
+    const removedEntry = entriesH.find((e) => e.id === 'golf-gallery');
+    check('A child deleted under a held page stays in the bundle and its removal is held (RT-1)', !!findIn(bh.bundle, 'golf-gallery') && removedEntry?.kind === 'removed' && keptHeld.has('golf'));
+    model.undo();
+  }
+  model.commit('new broken', (d) => addPage(d, 'eat', { id: 'newpage-test1', type: 'info', title: '', body: 'x' }));
+  const v6 = validateAll(model.draft, { imageSize: () => null });
+  const b6 = buildBundle(model.draft, { revision: 3, held: v6, published: published.bundle });
+  check('A NEW page with a blocker is left out', !JSON.stringify(b6.bundle).includes('newpage-test1') && b6.heldBack.find((h) => h.id === 'newpage-test1')?.kept === false);
+  model.undo();
   const v2 = validateAll(model.draft, { imageSize: (src) => (src === 'hero-firepit' ? { width: 1280, height: 853 } : src === 'hero-pool' ? { width: 1282, height: 1920 } : null) });
   check('A strip photo under 1920 px is a blocker; a portrait 1282 × 1920 is fine', v2.get('firepit').blockers.some((b) => b.field === 'image') && !v2.get('spa').blockers.some((b) => b.field === 'image'));
   model.commit('badqr', (d) => { findIn(d, 'cowgirl').page.qr.url = 'not a url'; });
   check('An invalid QR address is a blocker', validateAll(model.draft).get('cowgirl').blockers.some((b) => b.field === 'qr.url'));
   model.undo();
+
+  // 6b. Guard rails (item 8).
+  model.commit('hide all', (d) => { for (const c of d.home.children) c.hidden = true; });
+  const bAll = buildBundle(model.draft, { revision: 3, held: validateAll(model.draft), published: published.bundle });
+  check('Home with every section hidden produces no sections (publish is refused by the plan)', !(bAll.bundle.home.children || []).length);
+  model.undo();
+  model.commit('nine', (d) => { for (let i = 0; i < 2; i++) addPage(d, 'home', { id: `extra-${i}`, type: 'hub', title: `Extra ${i}`, image: 'hero-eat', children: [] }); });
+  check('More than 8 sections is a blocker on Home', validateAll(model.draft).get('home').blockers.some((b) => /9 sections/.test(b.message)));
+  model.undo();
+  model.commit('dupe', (d) => { d.home.children[1].title = d.home.children[0].title; });
+  check('Duplicate section titles are a warning, not a blocker', validateAll(model.draft).get('home').warnings.some((w) => /same name/.test(w.message)) && !validateAll(model.draft).get('home').blockers.length);
+  model.undo();
+  model.commit('dupe dish', (d) => { const m = findIn(d, 'firepit-menu').page; m.sections[0].items[1].name = m.sections[0].items[0].name; });
+  check('Duplicate dish names in a part are a warning', validateAll(model.draft).get('firepit-menu').warnings.some((w) => /Two dishes/.test(w.message)));
+  model.undo();
+  check('An unknown media/ path is a blocker labelled photo missing (OBS-3)', validateAll({ hotel: {}, home: { id: 'home', type: 'home', title: 'x', children: [{ id: 'p', type: 'info', title: 'P', image: 'media/000000000000-1920.jpg', body: 'b' }] } }, { imageKnown: () => false }).get('p').blockers.some((b) => /photo missing/i.test(b.message)));
+
+  // 6c. Someone else published while the draft was open (OBS-1).
+  {
+    const base = clone(published.bundle);
+    const theirs = clone(base);
+    findIn(theirs, 'firepit-menu').page.sections[0].items[0].price = '£21';
+    findIn(theirs, 'golf').page.title = 'Golf at Cave';
+    const mine = clone(base);
+    mine.hotel.checkout = '11:30am';
+    findIn(mine, 'firepit-menu').page.sections[0].items[0].price = '£14';   // conflicts with theirs
+    findIn(mine, 'deck').page.hidden = true;
+    movePage(mine, 'home', 6, 0);                                              // Contact first
+    addPage(mine, 'eat', { id: 'lounge-test1', type: 'info', title: 'Cowgirl Lounge', image: 'hero-cowgirl', body: 'x' });
+    const r = threeWayMerge(base, theirs, mine);
+    check('Rebase keeps the newer publish where both changed the same thing', findIn(r.doc, 'firepit-menu').page.sections[0].items[0].price === '£21' && r.conflicts.some((c) => /Firepit Menu: kept the newer publish's menu/.test(c)), r.conflicts.join(' | '));
+    check('Rebase carries over my other changes (hotel, hidden, reorder, new page)', r.doc.hotel.checkout === '11:30am' && findIn(r.doc, 'deck').page.hidden === true && r.doc.home.children[0].id === 'contact' && findIn(r.doc, 'lounge-test1') && findIn(r.doc, 'golf').page.title === 'Golf at Cave');
+    const clean = describeChanges(theirs, r.doc).summary;
+    check('After the rebase the change list does not revert their publish', !clean.some((s) => /£21 → £14|Golf at Cave" → "Golf"/.test(s)), clean.join(' | '));
+  }
 
   // 7. Publish against a fake GitHub.
   const calls = [];

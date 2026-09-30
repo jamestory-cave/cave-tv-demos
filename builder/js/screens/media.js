@@ -33,7 +33,7 @@ async function uploadFiles(app, files, after) {
   for (const file of files) {
     try {
       const rec = await prepareUpload(file);
-      if (app.media.meta(rec.hash) || app.media.index.media[rec.hash]) { toast(`${rec.name} is already in the library.`); continue; }
+      if (app.media.pending.has(rec.hash) || app.media.index.media[rec.hash]) { toast(`${rec.name} is already in the library (same photo).`); continue; }
       await app.media.add(rec);
       added++;
       if (after) after(rec);
@@ -119,8 +119,11 @@ export function mount(host, app) {
       aside.append(el('div.use', el('button', { type: 'button', onclick: () => app.go('editor', { page: u.pageId }) }, model.pathLabel(u.pageId)), el('span.muted', u.use)));
     }
     if (e.source === 'pending') {
+      const inUndo = !uses.length && model.undoStack.some((u) => JSON.stringify(u.snapshot).includes(e.path));
+      const why = uses.length ? 'In use: remove it from those pages first' : inUndo ? 'A page that was just deleted still uses it; it could come back with Undo' : '';
       aside.append(el('div.row', { style: { marginTop: '14px' } }, el('button.btn.sm', { type: 'button', onclick: () => renameEntry(e) }, 'Rename'),
-        el('button.btn.sm.danger', { type: 'button', disabled: uses.length > 0, title: uses.length ? 'In use: remove it from those pages first' : '', onclick: () => removeEntry(e) }, 'Delete')));
+        el('button.btn.sm.danger', { type: 'button', disabled: !!why, title: why, onclick: () => removeEntry(e) }, 'Delete')));
+      if (why) aside.append(el('p.muted.tiny', { style: { marginTop: '4px' } }, why + '.'));
       aside.append(el('p.muted.tiny', { style: { marginTop: '6px' } }, 'Once published, a photo stays on the TV\'s server for good so old publishes can be restored.'));
     }
   }

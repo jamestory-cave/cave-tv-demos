@@ -47,11 +47,11 @@ export function mount(host, app, params) {
     sections.forEach((s, si) => {
       const head = el('div.sec-h', { draggable: 'true', dataset: { si } });
       head.append(el('span.grip', { title: 'Drag to reorder' }, svgIcon('grip', 14)));
-      const t = el('input.in', { value: s.title || '', placeholder: 'Part name, e.g. Small plates', 'aria-label': 'Part name', style: { maxWidth: '260px' } });
+      const t = el('input.in', { value: s.title || '', placeholder: 'Part name, e.g. Small plates', 'aria-label': 'Part name', maxlength: LIMITS.sectionTitle, style: { maxWidth: '260px' } });
       t.addEventListener('input', () => commit('Edit part name', (pg) => { pg.sections[si].title = t.value; }, `sec.${si}.title`));
-      const note = el('input.in', { value: s.note || '', placeholder: 'Note, e.g. cooked over English oak', 'aria-label': 'Part note', style: { maxWidth: '300px' } });
+      const note = el('input.in', { value: s.note || '', placeholder: 'Note, e.g. cooked over English oak', 'aria-label': 'Part note', maxlength: LIMITS.sectionNote, style: { maxWidth: '300px' } });
       note.addEventListener('input', () => commit('Edit part note', (pg) => { if (note.value) pg.sections[si].note = note.value; else delete pg.sections[si].note; }, `sec.${si}.note`));
-      head.append(t, note, el('span.muted.small', plural((s.items || []).length, 'dish', 'dishes')), el('span.spacer'));
+      head.append(counted(t, LIMITS.sectionTitle), counted(note, LIMITS.sectionNote), el('span.muted.small', plural((s.items || []).length, 'dish', 'dishes')), el('span.spacer'));
       head.append(moveButtons(si, sections.length, (a, b) => commit('Reorder parts', (pg) => moveInList(pg.sections, a, b))));
       head.append(iconButton('close', 'Remove part', () => removeSection(si)));
       secList.append(head);
@@ -65,6 +65,14 @@ export function mount(host, app, params) {
     sortable(secList, '.sec-h', (a, b) => commit('Reorder parts', (pg) => moveInList(pg.sections, a, b)));
     main.append(secList);
     if (!sections.length) main.append(el('div.empty', 'No parts yet. Add one, then add dishes to it.'));
+  }
+
+  /** Wraps an input with a small live counter underneath. */
+  function counted(input, limit) {
+    const c = el('div.tiny.muted', { style: { textAlign: 'right', marginTop: '2px' } });
+    const upd = () => { c.textContent = `${input.value.length} / ${limit}`; c.style.color = input.value.length >= Math.ceil(limit * 0.9) ? 'var(--amber)' : ''; };
+    input.addEventListener('input', upd); upd();
+    return el('div', { style: { minWidth: '0' } }, input, c);
   }
 
   function focusLastName(si) {
@@ -95,7 +103,7 @@ export function mount(host, app, params) {
     tr.append(el('td.tags-cell', tags));
     const price = el('input.in', { value: d.price || '', placeholder: '£0', 'aria-label': 'Price', maxlength: LIMITS.dishPrice, style: { textAlign: 'right' } });
     price.addEventListener('input', () => commit('Edit price', (pg) => { if (price.value) pg.sections[si].items[di].price = price.value; else delete pg.sections[si].items[di].price; }, `dish.${si}.${di}.price`));
-    tr.append(el('td.price-cell', price));
+    tr.append(el('td.price-cell', counted(price, LIMITS.dishPrice)));
     const ops = el('td.ops-cell');
     ops.append(el('button.eye', { type: 'button', title: d.hidden ? 'Put back on the menu' : 'Take off the menu for now', 'aria-label': d.hidden ? 'Put back on the menu' : 'Take off the menu', onclick: () => { commit(d.hidden ? 'Put dish back' : 'Take dish off', (pg) => { const it = pg.sections[si].items[di]; if (it.hidden) delete it.hidden; else it.hidden = true; }); renderMain(); } }, svgIcon(d.hidden ? 'eyeOff' : 'eye', 15)));
     ops.append(iconButton('close', 'Remove dish', () => removeDish(si, di)));

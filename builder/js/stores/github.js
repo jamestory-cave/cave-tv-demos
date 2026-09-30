@@ -65,7 +65,7 @@ export class GitHubStore {
       if (!repo.permissions?.push) return { ok: false, reason: 'This passcode can read the repository but cannot write to it. It needs Contents: Read and write.' };
       return { ok: true, repo: repo.full_name };
     } catch (e) {
-      if (e.status === 401) return { ok: false, reason: 'GitHub did not accept this passcode. Check it was copied in full.' };
+      if (e.status === 401) return { ok: false, reason: 'The passcode was not accepted. Check it was copied in full and has not expired.' };
       if (e.status === 404) return { ok: false, reason: `This passcode cannot see ${config.owner}/${config.repo}. It must be limited to that repository.` };
       return { ok: false, reason: e.message };
     }
@@ -182,7 +182,8 @@ async function defaultTransport(method, url, body, token) {
   let data = null;
   try { data = await res.json(); } catch { /* no body */ }
   if (!res.ok) {
-    const err = new Error(data?.message ? `GitHub: ${data.message}` : `GitHub: HTTP ${res.status}`);
+    const friendly = { 401: 'The passcode was not accepted.', 403: 'The passcode is not allowed to do this.', 404: 'The repository could not be found with this passcode.' };
+    const err = new Error(friendly[res.status] || (data?.message ? `GitHub said: ${data.message}` : `GitHub replied with an error (${res.status})`));
     err.status = res.status;
     throw err;
   }
