@@ -220,6 +220,13 @@ async function run() {
   check('Publish writes bundle, version, history, media index and both photo sizes', calls.some((c) => c.includes('media/abcdef123456-1920.jpg') && c.includes('media/abcdef123456-800.jpg') && c.includes(r.bundlePath) && c.includes('version.json') && c.includes('history.json') && c.includes('media/index.json')));
   check('Bundle path follows bundles/<revision>-<hash8>.json', /^bundles\/\d+-[0-9a-f]{8}\.json$/.test(r.bundlePath), r.bundlePath);
   check('History entry has who, when and summary', r.historyEntry.by === 'Self-test' && Array.isArray(r.historyEntry.summary) && /Z$/.test(r.historyEntry.publishedAt));
+  // Restore: an old bundle republished as a NEW revision with publishedAt = now (contract rule 2: the TV ignores an older publishedAt).
+  {
+    const before = Date.now();
+    const rr = await store.publish({ bundle: clone(published.bundle), basedOnRevision: published.version.revision, summary: ['Restored revision 1'], by: 'Self-test', note: 'Restore', media: [], mediaIndex: published.mediaIndex });
+    const at = Date.parse(rr.version.publishedAt);
+    check('Restore writes version.json with publishedAt = now, a new revision and a new history entry', rr.revision === published.version.revision + 1 && at >= before - 1000 && at <= Date.now() + 1000 && rr.version.publishedAt !== published.version.publishedAt && rr.historyEntry.revision === rr.revision && rr.historyEntry.publishedAt === rr.version.publishedAt && rr.bundlePath !== published.version.bundle, `${published.version.publishedAt} -> ${rr.version.publishedAt}, revision ${rr.revision}`);
+  }
   let conflict = null;
   try { await store.publish({ bundle: b2, basedOnRevision: published.version.revision - 1, summary: [], by: 'x' }); } catch (e) { conflict = e; }
   check('Publishing on a stale revision is refused', conflict && conflict.constructor.name === 'PublishConflict', conflict?.message);
