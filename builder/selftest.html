@@ -42,6 +42,7 @@ import { GitHubStore } from './js/stores/github.js';
 import { encodeQR, qrSVG } from './js/preview/qr.js';
 import { threeWayMerge } from './js/merge.js';
 import { probeMP4 } from './js/mp4.js';
+import { renderPage } from './js/preview/pages.js';
 import { parseMediaPath, shapeOf, slideProblem, prepareSlide, slidePathFor, MediaRegistry } from './js/media.js';
 import { postersIn } from './js/stores/github.js';
 import { mediaPathsIn } from './js/bundle.js';
@@ -154,6 +155,27 @@ async function run() {
   model.commit('badqr', (d) => { findIn(d, 'cowgirl').page.qr.url = 'not a url'; });
   check('An invalid QR address is a blocker', validateAll(model.draft).get('cowgirl').blockers.some((b) => b.field === 'qr.url'));
   model.undo();
+
+  // 6a. Third-level pages: child tiles on every page type; no photo is a warning there, not a blocker.
+  {
+    const kid = { id: 'penthouse-tour', type: 'gallery', title: 'Penthouse tour', images: ['hero-penthouse'] };
+    model.commit('third level', (d) => { findIn(d, 'penthouse').page.children = [kid]; });
+    const v3 = validateAll(model.draft, { imageSize: () => null });
+    check('A third-level page with no photo gets a warning, not a blocker', !v3.get('penthouse-tour').blockers.some((b) => b.field === 'image') && v3.get('penthouse-tour').warnings.some((w) => /No photo: the tile will be plain/.test(w.message)));
+    check('A second-level strip with no photo is still a blocker', validateAll({ hotel: {}, home: { id: 'home', type: 'home', title: 'h', children: [{ id: 's', type: 'hub', title: 'S', image: 'hero-eat', children: [{ id: 'p', type: 'info', title: 'P', body: 'x' }] }] } }).get('p').blockers.some((b) => b.field === 'image'));
+    const fakeMedia = { url: () => null };
+    const layout = { width: 1600, contentWidth: 1456, showsChildren: true, fallbackKicker: null };
+    const kids = [{ id: 'k1', type: 'info', title: 'Kid' }];
+    const hasTile = (page) => renderPage(page, { hotel: {}, layout, media: fakeMedia }).node.querySelector('[data-child="k1"]') !== null;
+    const tilesAfter = (page, ownSel) => { const n = renderPage(page, { hotel: {}, layout, media: fakeMedia }).node; const own = n.querySelector(ownSel), t = n.querySelector('[data-child="k1"]'); return !!own && !!t && (own.compareDocumentPosition(t) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0; };
+    check('Preview shows child tiles on gallery, list, contact and menu pages, after their own content',
+      tilesAfter({ id: 'g', type: 'gallery', title: 'G', images: ['hero-eat'], children: kids }, '.tv-thumbs')
+      && tilesAfter({ id: 'l', type: 'list', title: 'L', items: [{ title: 'Card' }], children: kids }, '.tv-lcard')
+      && tilesAfter({ id: 'c', type: 'contact', title: 'C', facts: ['x'], children: kids }, '.tv-facts')
+      && tilesAfter({ id: 'm', type: 'menu', title: 'M', sections: [{ title: 'S', items: [{ name: 'D' }] }], children: kids }, '.tv-row')
+      && hasTile({ id: 'i', type: 'info', title: 'I', body: 'x', children: kids }));
+    model.undo();
+  }
 
   // 6b. Guard rails (item 8).
   model.commit('hide all', (d) => { for (const c of d.home.children) c.hidden = true; });

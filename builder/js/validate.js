@@ -94,6 +94,7 @@ export function validatePage(page, ctx = {}) {
   text('body', page.body, LIMITS.body, 'Text');
 
   if (ctx.isStrip && page.type !== 'home' && !page.image) block('image', 'This strip has no photo');
+  else if (!ctx.isStrip && page.type !== 'home' && !page.image) warn('image', 'No photo: the tile will be plain');
   if (page.image) photo('image', page.image, 'full', 'Photo');
 
   (page.facts || []).forEach((f, i) => text(`facts.${i}`, f, LIMITS.fact, `Fact ${i + 1}`));

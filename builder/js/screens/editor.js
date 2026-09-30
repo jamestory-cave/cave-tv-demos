@@ -37,10 +37,10 @@ function partsFor(page) {
     case 'home': return ['heading', 'photo', 'children'];
     case 'hub': return ['heading', 'photo', 'text', 'photos', 'films', 'children', 'bg'];
     case 'info': return ['heading', 'photo', 'text', 'facts', 'photos', 'films', 'children', 'hours', 'qr', 'bg'];
-    case 'menu': return ['heading', 'photo', 'text', 'menu', 'films', 'hours', 'qr', 'bg'];
-    case 'gallery': return ['heading', 'photo', 'images'];
-    case 'list': return ['heading', 'photo', 'text', 'photos', 'films', 'items', 'bg'];
-    case 'contact': return ['heading', 'photo', 'hotel', 'facts', 'text', 'photos', 'films', 'qr', 'bg'];
+    case 'menu': return ['heading', 'photo', 'text', 'menu', 'films', 'hours', 'qr', 'children', 'bg'];
+    case 'gallery': return ['heading', 'photo', 'images', 'children'];
+    case 'list': return ['heading', 'photo', 'text', 'photos', 'films', 'items', 'children', 'bg'];
+    case 'contact': return ['heading', 'photo', 'hotel', 'facts', 'text', 'photos', 'films', 'qr', 'children', 'bg'];
     case 'finished': return ['heading', 'photo', 'slides', 'qr'];
     default: return ['heading', 'photo'];
   }
@@ -529,7 +529,7 @@ export function mount(host, app, params) {
       },
       addLabel: 'Add a page under this one', max: LIMITS.itemsMax + 4,
     });
-    box.append(el('p.help', p.type === 'hub' || p.type === 'home' ? 'These are the strips guests see inside this section.' : 'Shown as tiles at the bottom of the page. Guests are never more than four presses from home, so keep it to one level.'));
+    box.append(el('p.help', p.type === 'hub' || p.type === 'home' ? 'These are the strips guests see inside this section.' : 'Shown as tiles after this page\'s own content (every page type does this). Guests are never more than four presses from home, so keep it to one level. A page here without a photo gets a plain dark tile.'));
   }
 
   function addChild(p) {

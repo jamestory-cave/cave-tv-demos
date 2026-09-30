@@ -243,3 +243,7 @@
 .tv-playing.on { display: flex; }
 .tv-playing .t { font-family: Cinzel, serif; font-size: 56px; color: #fff; letter-spacing: 1.5px; }
 .tv-playing .s { font-size: 26px; color: rgba(255,255,255,.6); line-height: 1.4; }
+
+/* child-page tiles under a gallery's thumbnails (every page type shows its pages after its own content) */
+.tv-gtiles { padding: 0 72px 8px; gap: 28px; }
+.tv-gtiles .tv-tile { width: 300px; height: 168px; }

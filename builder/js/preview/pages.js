@@ -107,6 +107,15 @@ function filmCards(page, ctx, entry) {
 
 const fmtLen = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 
+/** Child-page tiles after a page's own content (every page type shows them). */
+function childTiles(page, ctx, entry, w = 380, h = 214) {
+  const kids = ctx.layout.showsChildren ? visible(page.children) : [];
+  if (!kids.length) return null;
+  const row = el('div.tv-tiles');
+  kids.forEach((c, i) => row.append(tile(c, ctx, entry && i === 0, w, h)));
+  return f(row, page.id, 'children', 'Pages under this one');
+}
+
 function factList(page, entry) {
   const list = stop(el('div.tv-facts.tv-text-stop'), 'facts', entry ? { entry: '1' } : {});
   (page.facts || []).forEach((t, i) => list.append(f(el('div.tv-fact', t), page.id, `facts.${i}`, `Fact ${i + 1}`)));
@@ -174,6 +183,7 @@ function renderMenu(page, ctx) {
   if ((page.hours || []).length) menu.append(hoursBlock(page, !hasRows && !hasFilms));
   if (page.qr) menu.append(qrBlock(page, !hasRows && !hasFilms && !(page.hours || []).length));
   root.append(f(menu, page.id, 'sections', 'Menu'));
+  const ct = childTiles(page, ctx, !hasRows && !hasFilms && !(page.hours || []).length && !page.qr); if (ct) root.append(ct);
   return root;
 }
 
@@ -199,6 +209,7 @@ function renderList(page, ctx) {
     list.append(f(card, page.id, `items.${i}`, `Card ${i + 1}`));
   });
   root.append(list);
+  const ct = childTiles(page, ctx, !fr && !fc && !(page.items || []).length); if (ct) root.append(ct);
   return root;
 }
 
@@ -224,6 +235,7 @@ function renderContact(page, ctx) {
   if (page.facts) left.append(factList(page, !h));
   const fr = frames(page, ctx, !h && !page.facts); if (fr) left.append(fr);
   const fc = filmCards(page, ctx, !h && !page.facts && !fr); if (fc) left.append(fc);
+  const ct = childTiles(page, ctx, !h && !page.facts && !fr && !fc); if (ct) left.append(ct);
   const right = el('div.r');
   if (page.qr) right.append(qrBlock(page, !h && !page.facts));
   if (page.body) right.append(f(el('div.tv-address', page.body), page.id, 'body', 'Address'));
@@ -277,6 +289,8 @@ function renderGallery(page, ctx) {
     thumbs.append(f(t, page.id, `images.${i}`, `Photo ${i + 1}`));
   });
   cap.append(f(thumbs, page.id, 'images', 'Photos'));
+  const ct = childTiles(page, ctx, !images.length, 300, 168);
+  if (ct) { ct.classList.add('tv-gtiles'); cap.append(ct); }
   root.append(cap);
   return root;
 }
