@@ -14,7 +14,10 @@ export const PAGE_TYPES = {
   gallery: { label: 'Photo gallery', hint: 'A set of photos to look through. The Penthouse.' },
   list:    { label: 'Cards',         hint: 'A list of cards with a photo each. Explore Kent, What\'s On.' },
   contact: { label: 'Contact page',  hint: 'Reception, room service, Wi-Fi and check-out from Hotel details.' },
+  finished: { label: 'Finished page', hint: 'Artwork or film from the visual team, shown full screen exactly as made. Fire plan, a poster.' },
 };
+
+export { ALLOWS } from './bundle.js';
 
 const listeners = new Set();
 
@@ -131,7 +134,7 @@ export const model = {
     return id;
   },
 
-  /** Where each image is used: media path or asset name -> [{pageId, use}]. */
+  /** Where each image or film is used: media path or asset name -> [{pageId, use}]. */
   imageUses(doc = this.draft) {
     const uses = new Map();
     const add = (src, pageId, use) => {
@@ -143,6 +146,10 @@ export const model = {
       add(page.image, page.id, page.id === 'home' ? 'Home background' : 'Strip and background');
       for (const src of page.images || []) add(src, page.id, 'Gallery photo');
       for (const item of page.items || []) add(item.image, page.id, `Card: ${item.title}`);
+      (page.photos || []).forEach((ph, i) => add(ph.image, page.id, `Photo frame ${i + 1}`));
+      (page.films || []).forEach((f) => { add(f.film, page.id, `Film: ${f.title || 'untitled'}`); add(f.poster, page.id, `Poster for film: ${f.title || 'untitled'}`); });
+      if (page.backgroundFilm) { add(page.backgroundFilm.film, page.id, 'Background film'); add(page.backgroundFilm.poster, page.id, 'Background film poster'); }
+      (page.slides || []).forEach((sl, i) => { add(sl.image, page.id, `Slide ${i + 1}`); add(sl.film, page.id, `Slide ${i + 1} (film)`); add(sl.poster, page.id, `Slide ${i + 1} poster`); });
     }
     return uses;
   },
@@ -186,6 +193,10 @@ export function newPage(type, title, id) {
       page.kicker = "We're here";
       page.subtitle = 'Reception is staffed 24 hours';
       page.facts = ['Something useful to know'];
+      break;
+    case 'finished':
+      page.description = '';
+      page.slides = [];
       break;
   }
   return page;

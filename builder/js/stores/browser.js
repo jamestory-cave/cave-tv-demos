@@ -60,7 +60,10 @@ export class BrowserStore {
     localStorage.setItem(PREFS_KEY, JSON.stringify(p));
   }
 
-  // ---- media (records: {hash, name, width, height, bytes, blobs: {1920: Blob, 800: Blob}, addedAt, published}) ----
+  // ---- media ----
+  // Photo records: {kind: 'photo', hash, name, width, height, bytes, blobs: {1920: Blob, 800: Blob}, poster?, addedAt, published}
+  // Film records:  {kind: 'film', hash, name, width, height, seconds, bytes, mbps, codec, audio, audioCodec, silent, poster, warnings, blob: File, addedAt, published}
+  // Both live in the same IndexedDB store, keyed by hash; a 60 MB film is one record.
   async putMedia(record) {
     const db = await this.db();
     await tx(db, 'readwrite', (s) => s.put(record));

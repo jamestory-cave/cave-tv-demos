@@ -11,8 +11,10 @@
 
 import { clone, canonical } from './util.js';
 
-const FIELDS = ['title', 'kicker', 'subtitle', 'image', 'body', 'facts', 'hours', 'qr', 'sections', 'images', 'items', 'hidden', 'type'];
-const LABELS = { title: 'title', kicker: 'small caps line', subtitle: 'subtitle', image: 'photo', body: 'text', facts: 'facts', hours: 'hours', qr: 'QR link', sections: 'menu', images: 'photos', items: 'cards', hidden: 'hidden', type: 'page type' };
+const FIELDS = ['title', 'kicker', 'subtitle', 'image', 'body', 'facts', 'hours', 'qr', 'sections', 'images', 'items', 'hidden', 'type',
+  'description', 'photos', 'films', 'backgroundFilm', 'slides'];
+const LABELS = { title: 'title', kicker: 'small caps line', subtitle: 'subtitle', image: 'photo', body: 'text', facts: 'facts', hours: 'hours', qr: 'QR link', sections: 'menu', images: 'photos', items: 'cards', hidden: 'hidden', type: 'page type',
+  description: 'description', photos: 'photo frames', films: 'films', backgroundFilm: 'background film', slides: 'slides' };
 const HOTEL = ['name', 'tagline', 'reception', 'roomService', 'wifiName', 'wifiPassword', 'checkout'];
 
 function index(home) {

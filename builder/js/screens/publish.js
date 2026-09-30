@@ -2,7 +2,8 @@
 
 import { el, clear, plural, fmtDate } from '../util.js';
 import { model } from '../model.js';
-import { PublishConflict } from '../stores/github.js';
+import { PublishConflict, UploadFailed } from '../stores/github.js';
+import { fmtBytes } from '../media.js';
 import { toast, modal, confirmModal, promptModal, textField, uid } from '../ui.js';
 
 export function mount(host, app) {
@@ -50,6 +51,15 @@ export function mount(host, app) {
     if (!entries.length) list.append(el('div.empty', 'No changes to publish. Edit something on Home, Menus or Hotel details and it appears here.'));
     main.append(list);
 
+    for (const w of plan.warnings) main.append(el('div.note.warn.small', { style: { marginTop: '10px' } }, el('strong', 'Worth knowing. '), w));
+    if (plan.media.films.length || plan.media.photos.length) {
+      const up = el('div.note.small', { style: { marginTop: '10px' } }, el('strong', 'Uploads with this publish. '));
+      const bits = [];
+      if (plan.media.photos.length) bits.push(`${plural(plan.media.photos.length, 'photo')} (two sizes each)`);
+      if (plan.media.films.length) bits.push(`${plural(plan.media.films.length, 'film')}: ${plan.media.films.map((f) => `${f.name} (${fmtBytes(f.bytes)})`).join(', ')}`);
+      up.append(bits.join(' · ') + '. Films go up one at a time with a progress count; a large one can take a minute or two.');
+      main.append(up);
+    }
     const warnings = [];
     for (const [id, v] of validation) for (const w of v.warnings) warnings.push(`${id === 'hotel' ? 'Hotel details' : model.pathLabel(id)}: ${w.message}`);
     if (warnings.length) main.append(el('p.muted.small', { style: { marginTop: '10px' } }, el('strong', 'Warnings (do not stop publishing): '), warnings.slice(0, 8).join(' · ') + (warnings.length > 8 ? ` · and ${warnings.length - 8} more` : '')));
@@ -126,18 +136,20 @@ export function mount(host, app) {
     const parts = [`${plural(live.length, 'change')} will go live.`];
     if (kept.length) parts.push(`Held back, staying as they are on TVs now: ${kept.join(', ')}.`);
     if (left.length) parts.push(`New and not going on TVs until fixed: ${left.join(', ')}.`);
+    if (plan.media.films.length) parts.push(`${plural(plan.media.films.length, 'film')} (${fmtBytes(plan.filmBytes)}) will be uploaded first; keep this page open until it finishes.`);
+    for (const w of plan.warnings) parts.push(w);
     parts.push('TVs follow within a couple of minutes.');
     const ok = await confirmModal('Publish to the TV?', parts.join(' '), { okLabel: 'Publish now' });
     if (!ok) return;
     busy = true; renderAside();
     try {
-      // Only the pending photos this bundle actually uses go to the repository.
-      const used = new Set(JSON.stringify(bundle).match(/media\/[0-9a-f]{12}-\d+\.jpg/g) || []);
-      const media = app.media.pendingRecords().filter((m) => [...used].some((u) => u.includes(m.hash)));
+      // Only the pending photos and films this bundle actually uses go to the repository.
+      const media = plan.media.photos;
+      const films = plan.media.films;
       const result = await app.github.publish({
-        bundle, basedOnRevision: model.basedOn?.revision, summary, by, note: note.trim(), media, mediaIndex: app.media.index, progress,
+        bundle, basedOnRevision: model.basedOn?.revision, summary, by, note: note.trim(), media, films, mediaIndex: app.media.index, progress,
       });
-      await app.media.markPublished(media.map((m) => m.hash), result.mediaIndex);
+      await app.media.markPublished([...media, ...films].map((m) => m.hash), result.mediaIndex);
       model.published = {
         version: result.version, bundle: { ...bundle, version: result.revision },
         history: [result.historyEntry, ...(model.published?.history || [])].slice(0, 20), mediaIndex: result.mediaIndex,
@@ -148,7 +160,12 @@ export function mount(host, app) {
       toast(`Published. The TV picks it up within a couple of minutes.${heldBack.length ? ' Held-back pages are still waiting to be fixed.' : ''}`, { ms: 10000 });
     } catch (e) {
       if (e instanceof PublishConflict) toast(e.message, { error: true, action: 'Reload', onAction: () => location.reload() });
-      else toast(`Publishing failed: ${e.message}`, { error: true });
+      else if (e instanceof UploadFailed) {
+        const body = el('div', el('p', `Uploading ${e.what} failed: ${e.reason}`), el('p', { style: { marginTop: '8px' } }, 'Nothing was published and nothing on the TV has changed. Your draft and the uploaded files are kept in this browser.'),
+          el('p', { style: { marginTop: '8px' } }, e.isFilm ? 'Try Publish now again. If the same film keeps failing, GitHub is refusing the upload: ask for a shorter export or a lower bitrate (6 Mb/s gives about 45 MB a minute), which also downloads faster on the TV.' : 'Try Publish now again. If it keeps failing, check the connection and the passcode in Settings.'));
+        modal({ title: 'Publish stopped', body, actions: [{ label: 'OK', primary: true }] });
+      }
+      else toast(`Publishing failed: ${e.message}. Nothing was published; your draft is kept.`, { error: true });
     } finally {
       busy = false; renderMain(); renderAside();
     }

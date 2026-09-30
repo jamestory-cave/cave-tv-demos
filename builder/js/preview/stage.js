@@ -18,10 +18,11 @@ const FOCUS_MS = 220, LEVEL_MS = 420;
 export function hasOwnContent(page) {
   switch (page.type) {
     case 'home': case 'hub': return false;
-    case 'contact': return true;
+    case 'contact': case 'finished': return true;
     default:
       return !!page.body || (page.facts || []).length > 0 || (page.hours || []).length > 0
-        || (page.items || []).length > 0 || (page.sections || []).length > 0 || (page.images || []).length > 0;
+        || (page.items || []).length > 0 || (page.sections || []).length > 0 || (page.images || []).length > 0
+        || (page.photos || []).length > 0 || (page.films || []).length > 0;
   }
 }
 
@@ -85,6 +86,8 @@ export class TVPreview {
     this.reveal = new Set();
     this.nav = { level: 0, s: 0, i: 0, trail: [], focus: 'strip', stop: null };
     this.galleryIndex = 0;
+    this.slideIndex = 0;
+    this.playing = null;
     this.selectedField = null;
     this.stripEls = new Map();
     this.build();
@@ -101,10 +104,11 @@ export class TVPreview {
     this.tagline = el('div.tv-tagline');
     this.back = el('div.tv-back', el('span.tv-chev', '‹'), el('span', 'Back'));
     this.back.addEventListener('click', () => this.goBack());
-    this.safe = el('div.tv-safe');
+    this.safe = el('div.tv-safe', el('div.tv-safe-band', el('span', 'Top band: no words here (path line and Back)')), el('div.tv-safe-margin', el('span', 'Keep words and logos inside this line')));
     this.hoverLabel = el('div.tv-hover-label');
+    this.player = el('div.tv-playing');
     this.stage.append(this.sectionsLayer, this.itemsLayer, this.leafLayer, el('div.tv-scrim-top'), this.path,
-      el('div.tv-slot', this.tagline, this.back), this.safe, this.hoverLabel);
+      el('div.tv-slot', this.tagline, this.back), this.safe, this.hoverLabel, this.player);
     this.viewport.append(this.stage);
     box.append(this.viewport);
     clear(this.host).append(box);
@@ -288,20 +292,24 @@ export class TVPreview {
       return k === n.i ? (n.focus === 'strip' ? ['is-current', 'is-focused'] : ['is-current']) : ['is-closed'];
     }, (page) => page.kicker ?? this.section?.title ?? '', g.captionWidth(g.inside.open));
 
-    // Chrome.
+    // Chrome. A finished page takes the whole screen: slivers hidden, path line and Back kept.
+    const fin = n.level === 2 && this.pageOnShow?.type === 'finished';
+    this.stage.classList.toggle('finished', fin);
     this.stage.classList.toggle('deep', n.level > 0);
     this.back.classList.toggle('is-focused', n.level > 0 && n.focus === 'back');
     this.tagline.textContent = this.doc.hotel?.tagline || '';
     this.renderPath();
 
-    // Leaf.
+    // Leaf. The page area's scroll position survives a re-render (typing a caption must not jump to the top).
+    const keepScroll = this.pageEl ? this.pageEl.scrollTop : 0;
     clear(this.leafLayer);
     this.pageEl = null;
     if (n.level === 2 && this.leafPage) {
-      this.leafLayer.style.left = g.leafX + 'px';
-      this.leafLayer.style.width = g.leafWidth + 'px';
+      this.leafLayer.style.left = (fin ? 0 : g.leafX) + 'px';
+      this.leafLayer.style.width = (fin ? W : g.leafWidth) + 'px';
       this.leafLayer.style.display = '';
-      this.renderLeaf(g);
+      this.renderLeaf(fin ? { ...g, leafX: 0, leafWidth: W } : g);
+      if (keepScroll && this.pageEl && !this.pageEl.classList.contains('tv-full')) this.pageEl.scrollTop = keepScroll;
     } else {
       this.leafLayer.style.display = 'none';
     }
@@ -338,7 +346,9 @@ export class TVPreview {
       const labEl = strip.querySelector('.tv-label');
       labEl.textContent = lab ? lab.toUpperCase() : '';
       labEl.style.display = lab ? '' : 'none';
-      const url = this.media.url(page.image, 1920);
+      const isLeaf = roles(k).includes('is-leaf');
+      const bg = isLeaf && page.backgroundFilm?.poster ? page.backgroundFilm.poster : page.image;
+      const url = this.media.url(bg, 1920);
       const photo = strip.querySelector('.tv-photo');
       const want = url ? `url("${url}")` : '';
       if (photo.style.backgroundImage !== want) photo.style.backgroundImage = want;
@@ -381,18 +391,24 @@ export class TVPreview {
     const n = this.nav;
     const page = this.pageOnShow;
     if (!page) return;
-    if (n.trail.length) {
+    if (n.trail.length && page.type !== 'finished') {
       const bd = el('div.tv-backdrop');
-      const url = this.media.url(page.image, 1920);
+      const url = this.media.url(page.backgroundFilm?.poster || page.image, 1920);
       if (url) bd.style.backgroundImage = `url("${url}")`;
       this.leafLayer.append(bd);
+    }
+    if (page.backgroundFilm?.film) {
+      const lab = el('div.tv-bgfilm', el('span.dot'), 'Background film · loops silently');
+      lab.dataset.f = `${page.id}|backgroundFilm`;
+      lab.dataset.label = 'Background film';
+      this.leafLayer.append(lab);
     }
     const layout = {
       width: g.leafWidth, contentWidth: g.leafWidth - 144,
       showsChildren: !(n.trail.length === 0 && page.id === this.section?.id),
       fallbackKicker: this.section?.title || null,
     };
-    const { node, full } = renderPage(page, { hotel: this.doc.hotel, layout, media: this.media, galleryIndex: this.galleryIndex });
+    const { node, full } = renderPage(page, { hotel: this.doc.hotel, layout, media: this.media, galleryIndex: this.galleryIndex, slideIndex: this.slideIndex });
     this.pageEl = el('div.tv-page' + (full ? '.tv-full' : ''), node);
     this.leafLayer.append(this.pageEl);
     if (this.mode === 'remote') this.applyFocus();
@@ -407,6 +423,11 @@ export class TVPreview {
     const stopEl = e.target.closest('[data-stop]');
     if (stopEl?.dataset.child) {
       this.openChild(stopEl.dataset.child);
+      return;
+    }
+    if (e.target.closest('.tv-fin-count')) {
+      // The counter steps through the slides in edit mode.
+      this.showSlide((this.slideIndex + 1) % this.pageEl.querySelectorAll('.tv-slide').length);
       return;
     }
     if (field && field !== strip) {
@@ -452,7 +473,7 @@ export class TVPreview {
     const inside = this.items(this.sections[k]);
     const direct = inside.length <= 1;
     Object.assign(this.nav, { level: direct ? 2 : 1, s: k, i: 0, trail: [], focus: 'strip', stop: null });
-    this.galleryIndex = 0;
+    this.galleryIndex = 0; this.slideIndex = 0;
     this.render(LEVEL_MS);
     if (direct && this.mode === 'remote') this.focusEntry();
     this.announce();
@@ -460,7 +481,7 @@ export class TVPreview {
 
   openItem(k) {
     Object.assign(this.nav, { i: k, level: 2, trail: [], focus: 'strip', stop: null });
-    this.galleryIndex = 0;
+    this.galleryIndex = 0; this.slideIndex = 0;
     this.render(LEVEL_MS);
     if (this.mode === 'remote') this.focusEntry();
     this.announce();
@@ -471,7 +492,7 @@ export class TVPreview {
     if (!page || !this.visible(page.children).some((c) => c.id === id)) return;
     this.nav.trail.push(id);
     this.nav.stop = null;
-    this.galleryIndex = 0;
+    this.galleryIndex = 0; this.slideIndex = 0;
     this.render(LEVEL_MS);
     if (this.mode === 'remote') this.focusEntry();
     this.announce();
@@ -479,7 +500,9 @@ export class TVPreview {
 
   goBack() {
     const n = this.nav;
+    if (this.playing) { this.stopPlaying(); return; }
     if (n.level === 0) return;
+    this.slideIndex = 0;
     if (n.level === 2 && n.trail.length) {
       const left = n.trail.pop();
       n.stop = null;
@@ -538,17 +561,71 @@ export class TVPreview {
     if (count) count.textContent = `${i + 1} of ${this.pageEl.querySelectorAll('.tv-gphoto').length}`;
   }
 
+  showSlide(i) {
+    const slides = this.pageEl ? [...this.pageEl.querySelectorAll('.tv-slide')] : [];
+    if (!slides.length) return;
+    this.slideIndex = Math.max(0, Math.min(i, slides.length - 1));
+    slides.forEach((s) => s.classList.toggle('on', Number(s.dataset.slide) === this.slideIndex));
+    const count = this.pageEl.querySelector('[data-count]');
+    if (count) count.textContent = `${this.slideIndex + 1} of ${slides.length}`;
+    if (this.mode === 'remote') { this.nav.focus = 'page'; this.nav.stop = `slide-${this.slideIndex}`; this.applyFocus(); }
+  }
+
+  /** The preview never plays video: Select on a film shows a placeholder the TV's player would replace. */
+  play(title) {
+    this.playing = title || 'Film';
+    clear(this.player).append(el('div.t', 'Playing: ' + this.playing), el('div.s', 'The TV opens its own player here, full screen with sound. Menu (Esc) stops it and returns to the page.'));
+    this.player.classList.add('on');
+  }
+
+  stopPlaying() {
+    this.playing = null;
+    this.player.classList.remove('on');
+    this.applyFocus();
+  }
+
+  /** Position of a node inside the page area, in TV pixels, independent of nesting and the stage scale. */
+  pageOffset(node) {
+    const page = this.pageEl;
+    const scale = this.stage.getBoundingClientRect().width / W || 1;
+    const r = node.getBoundingClientRect(), pr = page.getBoundingClientRect();
+    return { top: (r.top - pr.top) / scale + page.scrollTop, height: r.height / scale };
+  }
+
   scrollTo(s) {
     const page = this.pageEl;
     if (!page || page.classList.contains('tv-full')) return;
-    const top = s.offsetTop - 30;
-    const bottom = s.offsetTop + s.offsetHeight + 30;
+    const { top: t, height } = this.pageOffset(s);
+    const top = t - 30;
+    const bottom = t + height + 30;
     if (top < page.scrollTop) page.scrollTop = Math.max(0, top);
     else if (bottom > page.scrollTop + page.clientHeight) page.scrollTop = bottom - page.clientHeight;
   }
 
+  /**
+   * Scrolls the page area so the field `key` ("pageId|field") is in view, as
+   * the TV would scroll to it. Heading fields keep the heading at the top;
+   * a field inside a list (photos.2.caption) reveals its row.
+   */
+  revealField(key) {
+    const page = this.pageEl;
+    if (!page || page.classList.contains('tv-full')) return;
+    const [pageId, field] = key.split('|');
+    if (['title', 'kicker', 'subtitle', 'description'].includes(field)) { page.scrollTop = 0; return; }
+    const all = [...page.querySelectorAll('[data-f]')];
+    const exact = all.find((n) => n.dataset.f === key);
+    const parts = field.split('.');
+    const target = exact || all.find((n) => n.dataset.f === `${pageId}|${parts.slice(0, 2).join('.')}`) || all.find((n) => n.dataset.f === `${pageId}|${parts[0]}`);
+    if (!target) return;
+    const { top, height } = this.pageOffset(target);
+    if (height + 60 >= page.clientHeight || top - 40 < page.scrollTop || top + height + 40 > page.scrollTop + page.clientHeight) {
+      page.scrollTop = Math.max(0, top - 40);
+    }
+  }
+
   key(k) {
     const n = this.nav;
+    if (this.playing) { if (k === 'back' || k === 'enter') this.stopPlaying(); return; }
     if (k === 'back') { this.goBack(); return; }
     if (n.level === 0) {
       if (k === 'left' && n.s > 0) { n.s--; this.render(FOCUS_MS); }
@@ -578,8 +655,18 @@ export class TVPreview {
     const stops = this.stops();
     const cur = stops.find((s) => s.dataset.stop === n.stop);
     if (!cur) { this.focusEntry(); return; }
+    if (this.pageOnShow?.type === 'finished') {
+      // Left and Right move between slides, no wrap; Left on the first slide (or Up) reaches Back.
+      const count = stops.filter((s) => s.dataset.slide !== undefined).length;
+      if (k === 'right') { if (this.slideIndex < count - 1) this.showSlide(this.slideIndex + 1); return; }
+      if (k === 'left') { if (this.slideIndex > 0) this.showSlide(this.slideIndex - 1); else { n.focus = 'back'; this.applyFocus(); } return; }
+      if (k === 'up') { n.focus = 'back'; this.applyFocus(); return; }
+      if (k === 'enter' && cur.dataset.film) this.play(cur.dataset.film);
+      return;
+    }
     if (k === 'enter') {
       if (cur.dataset.child) this.openChild(cur.dataset.child);
+      else if (cur.dataset.film) this.play(cur.dataset.film);
       return;
     }
     const next = this.neighbour(cur, stops, k);

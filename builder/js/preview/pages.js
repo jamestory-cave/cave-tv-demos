@@ -63,6 +63,50 @@ function tile(child, ctx, entry, w = 380, h = 214) {
   return t;
 }
 
+/** Photo frames (stage 2a): 16:9 frames in the main column, fill or whole, each a focus stop. */
+function frames(page, ctx, entry) {
+  const photos = page.photos || [];
+  if (!photos.length) return null;
+  const list = el('div.tv-frames');
+  photos.forEach((ph, i) => {
+    const frame = stop(el('div.tv-frame' + (ph.fit === 'whole' ? '.whole' : '')), `frame-${i}`, entry && i === 0 ? { entry: '1' } : {});
+    const img = el('div.img');
+    const url = ctx.media.url(ph.image, 1920);
+    if (url) img.style.backgroundImage = `url("${url}")`;
+    frame.append(img);
+    if (ph.caption) frame.append(el('div.tv-caption-line', ph.caption));
+    list.append(f(frame, page.id, `photos.${i}`, `Photo frame ${i + 1}`));
+  });
+  return f(list, page.id, 'photos', 'Photo frames');
+}
+
+function playGlyph() {
+  const g = el('div.tv-play');
+  g.append(el('span'));
+  return g;
+}
+
+/** Film cards (stage 2c): a 16:9 poster with a play glyph and the title; Select plays. */
+function filmCards(page, ctx, entry) {
+  const films = page.films || [];
+  if (!films.length) return null;
+  const row = el('div.tv-films');
+  films.forEach((fl, i) => {
+    const card = stop(el('div.tv-film'), `film-${i}`, { film: fl.title || 'Untitled film', ...(entry && i === 0 ? { entry: '1' } : {}) });
+    const poster = el('div.poster');
+    const url = ctx.media.url(fl.poster, 800);
+    if (url) poster.style.backgroundImage = `url("${url}")`;
+    poster.append(playGlyph());
+    if (fl.seconds) poster.append(el('div.len', fmtLen(fl.seconds)));
+    card.append(poster);
+    card.append(el('div.t', fl.title || ' '));
+    row.append(f(card, page.id, `films.${i}`, `Film ${i + 1}`));
+  });
+  return f(row, page.id, 'films', 'Films');
+}
+
+const fmtLen = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
+
 function factList(page, entry) {
   const list = stop(el('div.tv-facts.tv-text-stop'), 'facts', entry ? { entry: '1' } : {});
   (page.facts || []).forEach((t, i) => list.append(f(el('div.tv-fact', t), page.id, `facts.${i}`, `Fact ${i + 1}`)));
@@ -74,11 +118,13 @@ function renderInfo(page, ctx) {
   const root = el('div.tv-page-in');
   root.append(header(page, ctx));
   const kids = ctx.layout.showsChildren ? visible(page.children) : [];
-  let first = page.body ? 'body' : (page.facts || []).length ? 'facts' : kids.length ? 'tiles' : (page.hours || []).length ? 'hours' : page.qr ? 'qr' : null;
+  let first = page.body ? 'body' : (page.facts || []).length ? 'facts' : (page.photos || []).length ? 'photos' : (page.films || []).length ? 'films' : kids.length ? 'tiles' : (page.hours || []).length ? 'hours' : page.qr ? 'qr' : null;
 
   const reading = el('div.tv-reading');
   if (page.body) reading.append(f(stop(el('div.tv-body.tv-text-stop', page.body), 'body', first === 'body' ? { entry: '1' } : {}), page.id, 'body', 'Text'));
   if ((page.facts || []).length) reading.append(factList(page, first === 'facts'));
+  const fr = frames(page, ctx, first === 'photos'); if (fr) reading.append(fr);
+  const fc = filmCards(page, ctx, first === 'films'); if (fc) reading.append(fc);
   if (kids.length) {
     const row = el('div.tv-tiles');
     kids.forEach((c, i) => row.append(tile(c, ctx, first === 'tiles' && i === 0)));
@@ -123,8 +169,10 @@ function renderMenu(page, ctx) {
     menu.append(sec);
   });
   const hasRows = entryGiven;
-  if ((page.hours || []).length) menu.append(hoursBlock(page, !hasRows));
-  if (page.qr) menu.append(qrBlock(page, !hasRows && !(page.hours || []).length));
+  const fc = filmCards(page, ctx, !hasRows); if (fc) menu.append(fc);
+  const hasFilms = !!(page.films || []).length;
+  if ((page.hours || []).length) menu.append(hoursBlock(page, !hasRows && !hasFilms));
+  if (page.qr) menu.append(qrBlock(page, !hasRows && !hasFilms && !(page.hours || []).length));
   root.append(f(menu, page.id, 'sections', 'Menu'));
   return root;
 }
@@ -135,8 +183,10 @@ function renderList(page, ctx) {
   root.append(header(page, ctx));
   const list = el('div.tv-list');
   if (page.body) list.append(f(el('div.tv-body.dim', page.body), page.id, 'body', 'Text'));
+  const fr = frames(page, ctx, true); if (fr) list.append(fr);
+  const fc = filmCards(page, ctx, !fr); if (fc) list.append(fc);
   (page.items || []).forEach((it, i) => {
-    const card = stop(el('div.tv-lcard'), `card-${i}`, i === 0 ? { entry: '1' } : {});
+    const card = stop(el('div.tv-lcard'), `card-${i}`, i === 0 && !fr && !fc ? { entry: '1' } : {});
     const img = f(el('div.img'), page.id, `items.${i}.image`, 'Card photo');
     const url = ctx.media.url(it.image, 800);
     if (url) img.style.backgroundImage = `url("${url}")`;
@@ -172,6 +222,8 @@ function renderContact(page, ctx) {
     left.append(card('checkout', 'CHECK-OUT', h.checkout));
   }
   if (page.facts) left.append(factList(page, !h));
+  const fr = frames(page, ctx, !h && !page.facts); if (fr) left.append(fr);
+  const fc = filmCards(page, ctx, !h && !page.facts && !fr); if (fc) left.append(fc);
   const right = el('div.r');
   if (page.qr) right.append(qrBlock(page, !h && !page.facts));
   if (page.body) right.append(f(el('div.tv-address', page.body), page.id, 'body', 'Address'));
@@ -185,9 +237,13 @@ function renderHub(page, ctx) {
   const root = el('div.tv-page-in');
   root.append(header(page, ctx));
   if (page.body) root.append(f(el('div.tv-body.dim', { style: { marginTop: '30px' } }, page.body), page.id, 'body', 'Text'));
+  const extras = el('div.tv-reading', { style: { marginTop: '40px', maxWidth: '1100px' } });
+  const fr = frames(page, ctx, true); if (fr) extras.append(fr);
+  const fc = filmCards(page, ctx, !fr); if (fc) extras.append(fc);
+  if (extras.childNodes.length) root.append(extras);
   if (ctx.layout.showsChildren) {
     const grid = el('div.tv-hub-grid');
-    visible(page.children).forEach((c, i) => grid.append(tile(c, ctx, i === 0, 420, 236)));
+    visible(page.children).forEach((c, i) => grid.append(tile(c, ctx, i === 0 && !fr && !fc, 420, 236)));
     root.append(f(grid, page.id, 'children', 'Pages under this one'));
   }
   return root;
@@ -225,9 +281,35 @@ function renderGallery(page, ctx) {
   return root;
 }
 
+// ---- finished page (stage 2b): the whole screen, exactly as made ---------
+function renderFinished(page, ctx) {
+  const root = el('div.tv-finished');
+  const slides = page.slides || [];
+  const index = Math.min(ctx.slideIndex || 0, Math.max(0, slides.length - 1));
+  slides.forEach((sl, i) => {
+    const s = stop(el('div.tv-slide' + (i === index ? '.on' : '') + (sl.film ? '.film' : '')), `slide-${i}`, { slide: String(i), ...(sl.film ? { film: page.title || 'Film' } : {}), ...(i === 0 ? { entry: '1' } : {}) });
+    const url = ctx.media.url(sl.film ? sl.poster : sl.image, 1920);
+    if (url) s.style.backgroundImage = `url("${url}")`;
+    if (sl.film) s.append(playGlyph());
+    root.append(f(s, page.id, `slides.${i}`, `Slide ${i + 1}`));
+  });
+  if (!slides.length) root.append(el('div.tv-empty', 'No slides yet. Add artwork or a film on the right.'));
+  const corner = el('div.tv-fin-corner');
+  if (page.qr) {
+    const card = el('div.tv-fin-qr');
+    card.append(f(el('div.img', qrSVG(page.qr.url || ' ', 240)), page.id, 'qr.url', 'QR web address'));
+    if (page.qr.label) card.append(f(el('div.l', page.qr.label), page.id, 'qr.label', 'QR line'));
+    corner.append(f(card, page.id, 'qr', 'QR link'));
+  }
+  if (slides.length > 1) corner.append(el('div.tv-fin-count', { dataset: { count: '1' } }, `${index + 1} of ${slides.length}`));
+  root.append(corner);
+  return root;
+}
+
 /** Returns {node, full} for the leaf. */
 export function renderPage(page, ctx) {
   switch (page.type) {
+    case 'finished': return { node: renderFinished(page, ctx), full: true };
     case 'gallery': return { node: renderGallery(page, ctx), full: true };
     case 'menu': return { node: renderMenu(page, ctx), full: false };
     case 'list': return { node: renderList(page, ctx), full: false };

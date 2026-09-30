@@ -7,6 +7,8 @@ import { LIMITS, validQR } from '../validate.js';
 import { toast, textField, uid, sortable, moveButtons, iconButton, confirmModal, modal } from '../ui.js';
 import { TVPreview } from '../preview/stage.js';
 import { pickPhoto } from './media.js';
+import { pickFilm, posterCapture, filmInfoBox } from './films.js';
+import { prepareSlide } from '../media.js';
 import { remotePad } from './remote.js';
 
 /** Sets a text field, dropping it when empty so the bundle stays clean. */
@@ -24,24 +26,30 @@ const PART_DEFS = {
   images:   { label: 'Photos', hint: 'The gallery' },
   items:    { label: 'Cards', hint: 'Title, line, text, photo' },
   hotel:    { label: 'Contact card', hint: 'From Hotel details' },
+  photos:   { label: 'Photo frames', hint: 'Up to six photos in the page, fill or whole' },
+  films:    { label: 'Films', hint: 'Up to four, each with a poster' },
+  bg:       { label: 'Background film', hint: 'A silent loop behind the page' },
+  slides:   { label: 'Slides', hint: 'Artwork or film, full screen' },
 };
 
 function partsFor(page) {
   switch (page.type) {
     case 'home': return ['heading', 'photo', 'children'];
-    case 'hub': return ['heading', 'photo', 'text', 'children'];
-    case 'info': return ['heading', 'photo', 'text', 'facts', 'children', 'hours', 'qr'];
-    case 'menu': return ['heading', 'photo', 'text', 'menu', 'hours', 'qr'];
+    case 'hub': return ['heading', 'photo', 'text', 'photos', 'films', 'children', 'bg'];
+    case 'info': return ['heading', 'photo', 'text', 'facts', 'photos', 'films', 'children', 'hours', 'qr', 'bg'];
+    case 'menu': return ['heading', 'photo', 'text', 'menu', 'films', 'hours', 'qr', 'bg'];
     case 'gallery': return ['heading', 'photo', 'images'];
-    case 'list': return ['heading', 'photo', 'text', 'items'];
-    case 'contact': return ['heading', 'photo', 'hotel', 'facts', 'text', 'qr'];
+    case 'list': return ['heading', 'photo', 'text', 'photos', 'films', 'items', 'bg'];
+    case 'contact': return ['heading', 'photo', 'hotel', 'facts', 'text', 'photos', 'films', 'qr', 'bg'];
+    case 'finished': return ['heading', 'photo', 'slides', 'qr'];
     default: return ['heading', 'photo'];
   }
 }
 
 function partForField(field) {
   const head = field.split('.')[0];
-  return { title: 'heading', kicker: 'heading', subtitle: 'heading', image: 'photo', body: 'text', facts: 'facts', hours: 'hours', qr: 'qr', children: 'children', sections: 'menu', images: 'images', items: 'items' }[head] || 'heading';
+  return { title: 'heading', kicker: 'heading', subtitle: 'heading', description: 'heading', image: 'photo', body: 'text', facts: 'facts', hours: 'hours', qr: 'qr', children: 'children', sections: 'menu', images: 'images', items: 'items',
+    photos: 'photos', films: 'films', backgroundFilm: 'bg', slides: 'slides' }[head] || 'heading';
 }
 
 function partSummary(page, part, app) {
@@ -57,6 +65,10 @@ function partSummary(page, part, app) {
     case 'images': return (page.images || []).length ? plural(page.images.length, 'photo') : 'None yet';
     case 'items': return (page.items || []).length ? plural(page.items.length, 'card') : 'None yet';
     case 'hotel': return 'Reception, room service, Wi-Fi, check-out';
+    case 'photos': return (page.photos || []).length ? plural(page.photos.length, 'frame') : 'Not used';
+    case 'films': return (page.films || []).length ? page.films.map((f) => f.title || 'untitled').join(' · ') : 'Not used';
+    case 'bg': return page.backgroundFilm?.film ? app.media.label(page.backgroundFilm.film) : 'Not used';
+    case 'slides': return (page.slides || []).length ? `${plural(page.slides.length, 'slide')}${page.slides.some((s) => s.film) ? ', with film' : ''}` : 'None yet';
     default: return '';
   }
 }
@@ -158,8 +170,10 @@ export function mount(host, app, params) {
   function refreshPreview(navigate = false) {
     const doc = state.view === 'published' ? model.published?.bundle : model.draft;
     if (!doc) return;
+    const slide = preview.slideIndex;
     preview.setDoc(doc, { reveal: [pageId] });
     if (navigate) preview.showPage(pageId);
+    else if (slide) preview.showSlide(slide);
     if (state.field) preview.setSelectedField(`${pageId}|${state.field}`);
   }
 
@@ -176,6 +190,12 @@ export function mount(host, app, params) {
     renderRail();
     renderSide();
     preview.setSelectedField(field ? `${pageId}|${field}` : null);
+    const slideMatch = /^slides\.(\d+)/.exec(field || '');
+    if (slideMatch) preview.showSlide(Number(slideMatch[1]));
+    // Scroll the TV's page area so the part being edited is in view (QA2-1).
+    const PART_ANCHOR = { heading: 'title', photo: null, text: 'body', facts: 'facts', hours: 'hours', qr: 'qr', children: 'children', menu: 'sections', images: 'images', items: 'items', hotel: 'reception', photos: 'photos', films: 'films', bg: 'backgroundFilm', slides: null };
+    const anchor = field || PART_ANCHOR[part];
+    if (anchor) preview.revealField(`${part === 'hotel' ? 'hotel' : pageId}|${anchor}`);
     if (field) {
       const target = side.querySelector(`[data-field="${CSS.escape(field)}"]`);
       if (target) { target.focus(); target.scrollIntoView({ block: 'nearest' }); }
@@ -185,7 +205,7 @@ export function mount(host, app, params) {
   const tf = (o) => {
     const f = textField({ id: uid('e'), ...o });
     f.input.dataset.field = o.field;
-    f.input.addEventListener('focus', () => { state.field = o.field; preview.setSelectedField(`${pageId}|${o.field}`); });
+    f.input.addEventListener('focus', () => { state.field = o.field; preview.setSelectedField(`${pageId}|${o.field}`); preview.revealField(`${pageId}|${o.field}`); });
     return f;
   };
 
@@ -207,6 +227,10 @@ export function mount(host, app, params) {
       case 'images': renderImages(body, p); break;
       case 'items': renderItems(body, p); break;
       case 'hotel': renderHotelPart(body); break;
+      case 'photos': renderPhotos(body, p); break;
+      case 'films': renderFilms(body, p); break;
+      case 'bg': renderBackground(body, p); break;
+      case 'slides': renderSlides(body, p); break;
     }
     side.append(el('div.rule'));
     side.append(el('h3', 'Checks on this page'));
@@ -232,6 +256,12 @@ export function mount(host, app, params) {
 
   // ---- part panels ----
   function renderHeading(box, p) {
+    if (p.type === 'finished') {
+      box.append(tf({ label: 'Title, for its strip and the path line', field: 'title', value: p.title || '', limit: LIMITS.title, onInput: (v) => commit('Edit title', (pg) => { pg.title = v; }, 'title') }));
+      box.append(tf({ label: 'What does it say?', field: 'description', value: p.description || '', limit: LIMITS.description, multiline: true, rows: 3, placeholder: 'Fire plan for all three levels with the assembly point at the front of the hotel.', help: 'Not shown on the TV. The words in artwork are pixels; this plain sentence gives search and read-aloud something to use later.', onInput: (v) => commit('Edit description', (pg) => put(pg, 'description', v), 'description') }));
+      box.append(el('div.note.small', { style: { marginTop: '4px' } }, 'Words and prices in this artwork can only be changed by uploading a new version. Anything that changes often belongs on a page built from parts.'));
+      return;
+    }
     box.append(tf({ label: 'Small caps line', field: 'kicker', value: p.kicker || '', limit: LIMITS.kicker, help: 'Shown in gold above the title, e.g. "AA 2 Rosettes".', onInput: (v) => commit('Edit small caps line', (pg) => put(pg, 'kicker', v), 'kicker') }));
     box.append(tf({ label: 'Title', field: 'title', value: p.title || '', limit: LIMITS.title, onInput: (v) => commit('Edit title', (pg) => { pg.title = v; }, 'title') }));
     if (p.type !== 'gallery') box.append(tf({ label: 'Subtitle', field: 'subtitle', value: p.subtitle || '', limit: LIMITS.subtitle, help: 'One line under the title.', onInput: (v) => commit('Edit subtitle', (pg) => put(pg, 'subtitle', v), 'subtitle') }));
@@ -242,10 +272,172 @@ export function mount(host, app, params) {
     const url = app.media.url(p.image, 800);
     if (url) thumb.style.backgroundImage = `url("${url}")`;
     const missing = p.image && !app.media.known(p.image);
-    box.append(el('div.photo-pick', thumb, el('div', el('div.small', { style: missing ? { color: 'var(--red)', fontWeight: '600' } : {} }, missing ? 'Photo missing: it is no longer in Media. Choose another.' : app.media.label(p.image)), el('div.row', { style: { marginTop: '6px' } },
-      el('button.btn.sm', { type: 'button', onclick: () => pickPhoto(app, { onPick: (src) => commit('Change photo', (pg) => { pg.image = src; }) }) }, 'Choose photo'),
+    const firstSlide = (p.slides || []).find((s) => s.image || s.poster);
+    box.append(el('div.photo-pick', thumb, el('div', el('div.small', { style: missing ? { color: 'var(--red)', fontWeight: '600' } : {} }, missing ? 'Photo missing: it is no longer in Media. Choose another.' : app.media.label(p.image)), el('div.row.wrap', { style: { marginTop: '6px' } },
+      el('button.btn.sm', { type: 'button', onclick: () => pickPhoto(app, { use: 'strip', onPick: (src) => commit('Change photo', (pg) => { pg.image = src; }) }) }, 'Choose photo'),
+      p.type === 'finished' && firstSlide ? el('button.btn.sm', { type: 'button', onclick: () => commit('Use slide 1 as the strip photo', (pg) => { pg.image = (firstSlide.image || firstSlide.poster).replace(/-3840\.jpg$/, '-1920.jpg'); }) }, 'Use slide 1') : null,
       p.image && p.id !== 'home' ? el('button.btn.sm', { type: 'button', onclick: () => commit('Remove photo', (pg) => { delete pg.image; }) }, 'Remove') : null))));
-    box.append(el('p.help', 'One photo does both jobs: the strip on the way in and the background of the page. Landscape, 1920 px wide or more.'));
+    box.append(el('p.help', p.type === 'finished'
+      ? 'The strip on the way in. Slide 1 cropped to the strip is the usual choice; if the artwork is mostly lettering, a photograph looks better cut into a thin strip.'
+      : 'One photo does both jobs: the strip on the way in and the background of the page. Landscape, 1920 px wide or more. Logos and artwork belong in a photo frame set to "Show the whole image", or a Finished page.'));
+  }
+
+  // ---- stage 2 parts ----
+  function renderPhotos(box, p) {
+    const photos = p.photos || [];
+    listEditor(box, {
+      items: photos,
+      render: (ph, i) => {
+        const th = el('div.thumb' + (ph.fit === 'whole' ? '.whole' : ''));
+        const url = app.media.url(ph.image, 800);
+        if (url) th.style.backgroundImage = `url("${url}")`;
+        const fitRow = el('div.fit', { role: 'radiogroup', 'aria-label': `Photo frame ${i + 1} fit` });
+        for (const [v, label, help] of [['fill', 'Fill the frame', 'Scaled to fill and cropped to 16:9, like the header photo. Right for photographs.'], ['whole', 'Show the whole image', 'The entire image on a dark ground, never cropped. Right for logos, posters and plans.']]) {
+          const on = (ph.fit || 'fill') === v;
+          fitRow.append(el('label.fit-opt' + (on ? '.on' : ''), el('input', { type: 'radio', name: `fit-${i}`, checked: on, onchange: () => commit('Change photo fit', (pg) => { pg.photos[i].fit = v; }) }), el('span', el('b', label), el('small', help))));
+        }
+        return [
+          el('div.photo-pick', { dataset: { field: `photos.${i}.image` }, tabindex: '-1' }, th, el('div', el('div.small', app.media.label(ph.image)),
+            el('button.btn.sm', { type: 'button', style: { marginTop: '4px' }, onclick: () => pickPhoto(app, { use: 'frame', onPick: (src, o) => commit('Change frame photo', (pg) => { pg.photos[i].image = src; if (o?.fit) pg.photos[i].fit = o.fit; }) }) }, ph.image ? 'Swap photo' : 'Choose photo'))),
+          fitRow,
+          tf({ label: 'Caption (optional)', field: `photos.${i}.caption`, value: ph.caption || '', limit: LIMITS.caption, onInput: (v) => commit('Edit caption', (pg) => put(pg.photos[i], 'caption', v), `photos.${i}.caption`) }),
+        ];
+      },
+      onMove: (a, b) => commit('Reorder photo frames', (pg) => moveInList(pg.photos, a, b)),
+      onAdd: () => pickPhoto(app, { use: 'frame', onPick: (src, o) => { commit('Add photo frame', (pg) => { pg.photos = pg.photos || []; pg.photos.push({ image: src, fit: o?.fit || 'fill' }); }); renderSide(); } }),
+      onRemove: (i) => removeWithUndo('photo frame', (pg) => pg.photos.splice(i, 1)[0], (pg, v) => { pg.photos = pg.photos || []; pg.photos.splice(i, 0, v); }),
+      addLabel: 'Add photo frame', max: LIMITS.photosMax,
+    });
+    box.append(el('p.help', `Shown in the main column after the facts, each a stop for the remote. Up to ${LIMITS.photosMax}; for more, use a Photo gallery page.`));
+  }
+
+  function filmRow(fl, i, field, label) {
+    const th = el('div.thumb.film');
+    const url = fl.poster ? app.media.url(fl.poster, 800) : null;
+    if (url) th.style.backgroundImage = `url("${url}")`;
+    th.append(el('span.play'));
+    const missingPoster = fl.film && !fl.poster;
+    return el('div', { dataset: { field: `${field}.film` }, tabindex: '-1' },
+      el('div.photo-pick', th, el('div', el('div.small', el('b', app.media.label(fl.film))),
+        el('div.row.wrap', { style: { marginTop: '6px' } },
+          el('button.btn.sm', { type: 'button', onclick: () => pickFilm(app, { onPick: (src, rec) => commit(`Change ${label}`, (pg) => { const t = getAt(pg, field); t.film = src; t.seconds = rec.seconds; if (rec.poster) t.poster = rec.poster; else delete t.poster; }) }) }, 'Swap film'),
+          el('button.btn.sm' + (missingPoster ? '.pri' : ''), { type: 'button', dataset: { field: `${field}.poster` }, onclick: () => posterCapture(app, fl.film, { title: fl.title, previous: fl.poster || null, onDone: (src) => commit('Set poster', (pg) => { getAt(pg, field).poster = src; }) }) }, fl.poster ? 'Change poster' : 'Capture a poster'),
+          fl.poster ? el('button.btn.sm', { type: 'button', onclick: () => pickPhoto(app, { use: 'poster', onPick: (src) => commit('Set poster', (pg) => { getAt(pg, field).poster = src; }) }) }, 'Poster from Media') : null))),
+      el('div', { style: { marginTop: '6px' } }, filmInfoBox(app, fl.film)),
+      missingPoster ? el('div.help', { style: { color: 'var(--red)' } }, 'No poster yet. The TV shows the poster before the film plays; capture a frame or choose a photo.') : null);
+  }
+
+  const getAt = (pg, field) => field.split('.').reduce((o, k) => (o == null ? o : o[/^\d+$/.test(k) ? Number(k) : k]), pg);
+
+  function renderFilms(box, p) {
+    const films = p.films || [];
+    listEditor(box, {
+      items: films,
+      render: (fl, i) => [
+        filmRow(fl, i, `films.${i}`, 'film'),
+        tf({ label: 'Title', field: `films.${i}.title`, value: fl.title || '', limit: LIMITS.filmTitle, placeholder: 'Your lighting scenes', onInput: (v) => commit('Edit film title', (pg) => put(pg.films[i], 'title', v), `films.${i}.title`) }),
+      ],
+      onMove: (a, b) => commit('Reorder films', (pg) => moveInList(pg.films, a, b)),
+      onAdd: () => pickFilm(app, { onPick: (src, rec) => { commit('Add film', (pg) => { pg.films = pg.films || []; pg.films.push({ film: src, poster: rec.poster || undefined, title: rec.name.slice(0, LIMITS.filmTitle), seconds: rec.seconds }); }); renderSide(); if (!rec.poster) posterCapture(app, src, { title: rec.name, onDone: (ps) => commit('Set poster', (pg) => { const f = pg.films.find((x) => x.film === src); if (f) f.poster = ps; }) }); } }),
+      onRemove: (i) => removeWithUndo('film', (pg) => pg.films.splice(i, 1)[0], (pg, v) => { pg.films = pg.films || []; pg.films.splice(i, 0, v); }),
+      addLabel: 'Add film', max: LIMITS.filmsMax,
+    });
+    box.append(el('p.help', `A 16:9 poster card with a play glyph and the title, in the main column. Select opens the TV's player full screen with sound; Menu returns to the card. Up to ${LIMITS.filmsMax} a page.`));
+  }
+
+  function renderBackground(box, p) {
+    const bg = p.backgroundFilm;
+    if (!bg) {
+      box.append(el('p.small.muted', 'No background film. The page shows its photo behind the words.'));
+      box.append(el('button.btn.sm', { type: 'button', onclick: () => pickFilm(app, { silentOnly: true, onPick: (src, rec) => { commit('Add background film', (pg) => { pg.backgroundFilm = { film: src, poster: rec.poster || undefined }; }); renderSide(); } }) }, '+ Choose a silent film'));
+      box.append(el('p.help', { style: { marginTop: '10px' } }, 'A short silent loop (8 to 20 seconds that ends where it starts) drawn in place of the page photo while the page is open. The TV falls back to the poster, or the page photo, until the film has downloaded or when the guest has Reduce Motion on. The preview shows the poster with a "loops silently" label; it never plays video.'));
+      return;
+    }
+    box.append(filmRow(bg, 0, 'backgroundFilm', 'background film'));
+    box.append(el('div.row.wrap', { style: { marginTop: '10px' } },
+      el('button.btn.sm', { type: 'button', onclick: () => pickFilm(app, { silentOnly: true, onPick: (src, rec) => commit('Change background film', (pg) => { pg.backgroundFilm = { film: src, poster: rec.poster || undefined }; }) }) }, 'Choose another'),
+      el('button.btn.sm.danger', { type: 'button', onclick: () => removeWithUndo('background film', (pg) => { const b = pg.backgroundFilm; delete pg.backgroundFilm; return b; }, (pg, v) => { pg.backgroundFilm = v; }) }, 'Remove')));
+    box.append(el('p.help', { style: { marginTop: '10px' } }, 'Loops silently behind the page. Films with a sound track are held back unless marked as silent in Media.'));
+  }
+
+  function renderSlides(box, p) {
+    const slides = p.slides || [];
+    box.append(el('div.note.small', { style: { marginBottom: '10px' } }, el('strong', 'Artwork rules. '),
+      'Exactly 16:9. 3840 × 2160 is best; 1920 × 1080 is the minimum. JPG or PNG up to 25 MB. On a 1920-wide canvas keep words and logos 96 px in from the sides and 64 px from the top and bottom, and out of the top 200 px where the path line and Back sit. Smallest body text 30 px; nothing under 24. About 60 words at most. ',
+      el('button.btn.link.sm', { type: 'button', onclick: () => app.go('guide') }, 'Full guide and template')));
+    listEditor(box, {
+      items: slides,
+      render: (sl, i) => {
+        const th = el('div.thumb' + (sl.film ? '.film' : ''));
+        const url = app.media.url(sl.film ? sl.poster : sl.image, 800);
+        if (url) th.style.backgroundImage = `url("${url}")`;
+        if (sl.film) th.append(el('span.play'));
+        th.style.backgroundSize = 'contain';
+        th.style.backgroundColor = '#111';
+        const size = app.media.size(sl.image);
+        const info = sl.film ? filmInfoBox(app, sl.film) : el('div.small.muted', size ? `${size.width} × ${size.height}${size.width >= 3840 ? '' : ' · 3840 × 2160 is sharper'}` : app.media.known(sl.image) ? 'Size unknown' : '');
+        const row = el('div', { dataset: { field: `slides.${i}.image` }, tabindex: '-1', onclick: () => preview.showSlide(i) });
+        row.append(el('div.photo-pick', th, el('div', el('div.small', el('b', `Slide ${i + 1}: `), app.media.label(sl.film || sl.image)), sl.film ? null : info,
+          el('div.row.wrap', { style: { marginTop: '6px' } },
+            sl.film
+              ? el('button.btn.sm', { type: 'button', onclick: () => posterCapture(app, sl.film, { title: p.title, previous: sl.poster || null, onDone: (src) => commit('Set poster', (pg) => { pg.slides[i].poster = src; }) }) }, sl.poster ? 'Change poster' : 'Capture a poster')
+              : el('button.btn.sm', { type: 'button', onclick: () => pickPhoto(app, { use: 'slide', onPick: (src) => commit('Replace slide', (pg) => { pg.slides[i].image = app.media.slidePath(src); }) }) }, 'Replace'),
+            el('button.btn.sm', { type: 'button', onclick: () => preview.showSlide(i) }, 'Show in preview')))));
+        if (sl.film) row.append(el('div', { style: { marginTop: '6px' } }, info));
+        return row;
+      },
+      onMove: (a, b) => commit('Reorder slides', (pg) => moveInList(pg.slides, a, b)),
+      onAdd: () => addSlide(p),
+      onRemove: (i) => removeWithUndo('slide', (pg) => pg.slides.splice(i, 1)[0], (pg, v) => { pg.slides = pg.slides || []; pg.slides.splice(i, 0, v); }),
+      addLabel: 'Add slide', max: LIMITS.slidesMax,
+    });
+    box.append(el('div.row.wrap', { style: { marginTop: '6px' } }, el('button.btn.sm', { type: 'button', disabled: slides.length >= LIMITS.slidesMax, onclick: () => addFilmSlide(p) }, '+ Add a film slide')));
+    box.append(el('p.help', { style: { marginTop: '10px' } }, 'The Builder checks size, shape and file type. It cannot read the artwork: switch on "Safe area" above the TV and check the margins and the top band by eye. Left and Right move between slides on the TV; nothing else on a finished page can be selected.'));
+  }
+
+  function addSlide(p) {
+    const input = el('input', { type: 'file', accept: 'image/jpeg,image/png', multiple: true, class: 'sr-only', id: uid('sl') });
+    let picked = false;
+    input.addEventListener('change', async () => {
+      const files = [...input.files]; input.value = '';
+      let n = 0;
+      for (const file of files) {
+        try {
+          const rec = await prepareSlide(file);
+          if (!app.media.pending.has(rec.hash) && !app.media.index.media[rec.hash]) await app.media.add(rec);
+          const src = app.media.slidePath(`media/${rec.hash}-1920.jpg`);   // -3840 when the upload was 4K
+          const strip = `media/${rec.hash}-1920.jpg`;
+          commit('Add slide', (pg) => { pg.slides = pg.slides || []; if (pg.slides.length < LIMITS.slidesMax) pg.slides.push({ image: src }); if (!pg.image) pg.image = strip; });
+          n++;
+          if (rec.warnings?.length) toast(`${rec.name}: ${rec.warnings.join(' ')}`, { ms: 9000 });
+        } catch (e) { toast(`${file.name}: ${e.message}`, { error: true, ms: 15000 }); }
+      }
+      if (n) { toast(`${plural(n, 'slide')} added. Check the margins with the safe-area overlay.`); picked = true; m.close(); renderSide(); preview.showSlide((page().slides || []).length - 1); }
+    });
+    const zone = el('div.drop', el('div', el('strong', 'Drop artwork here '), el('span.muted', 'or '), el('label.btn.sm', { for: input.id }, 'Choose files'), input),
+      el('span.muted.small', 'JPG or PNG · exactly 16:9 · 3840 × 2160 best, 1920 × 1080 minimum · up to 25 MB'));
+    zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('over'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('over'));
+    zone.addEventListener('drop', (e) => { e.preventDefault(); zone.classList.remove('over'); const dt = new DataTransfer(); for (const f of e.dataTransfer.files) dt.items.add(f); input.files = dt.files; input.dispatchEvent(new Event('change')); });
+    const body = el('div', zone,
+      el('ul.small', { style: { paddingLeft: '18px', margin: '0 0 10px', lineHeight: '1.6' } },
+        el('li', 'Exactly 16:9. 3840 × 2160 preferred; 1920 × 1080 minimum. JPG for photographs, PNG for lettering.'),
+        el('li', 'Keep words and logos inside the safe margins: 96 px from the sides, 64 px from the top and bottom, on a 1920 canvas (double at 3840).'),
+        el('li', 'Keep the top 200 px (400 at 3840) free of words: the TV darkens that band and draws the path line and Back there. Pictures may run through it.'),
+        el('li', 'Smallest body text 30 px on a 1920 canvas; nothing under 24. Guests read from the bed.'),
+        el('li', 'No more than about 60 words. More than that is a page built from parts.')),
+      el('p.help', 'The Builder checks size, shape and file type and refuses anything else. It cannot read the artwork, so margins and text size are checked by eye with the safe-area overlay.'),
+      el('div.row', { style: { marginTop: '10px' } }, el('button.btn.sm', { type: 'button', onclick: () => { m.close(); pickPhoto(app, { use: 'slide', onPick: (src) => { commit('Add slide', (pg) => { pg.slides = pg.slides || []; pg.slides.push({ image: app.media.slidePath(src) }); if (!pg.image) pg.image = src; }); renderSide(); } }); } }, 'Choose from Media instead')));
+    const m = modal({ title: `Add a slide to ${p.title}`, body, wide: false, actions: [{ label: 'Cancel' }] });
+    void picked;
+  }
+
+  function addFilmSlide(p) {
+    pickFilm(app, { onPick: (src, rec) => {
+      commit('Add film slide', (pg) => { pg.slides = pg.slides || []; pg.slides.push({ film: src, poster: rec.poster || undefined }); if (!pg.image && rec.poster) pg.image = rec.poster; });
+      renderSide();
+      if (!rec.poster) posterCapture(app, src, { title: p.title, onDone: (ps) => commit('Set poster', (pg) => { const sl = pg.slides.find((x) => x.film === src); if (sl) sl.poster = ps; if (!pg.image) pg.image = ps; }) });
+    } });
   }
 
   function renderText(box, p) {
@@ -333,7 +525,7 @@ export function mount(host, app, params) {
   function addChild(p) {
     let title = '';
     let type = 'info';
-    const types = ['info', 'menu', 'gallery', 'list'];
+    const types = ['info', 'menu', 'gallery', 'list', 'finished'];
     const buttons = types.map((t) => el('button', { type: 'button', class: t === type ? 'on' : '', dataset: { t }, onclick: () => { type = t; buttons.forEach((b) => b.classList.toggle('on', b.dataset.t === t)); } }, el('b', PAGE_TYPES[t].label), el('span', PAGE_TYPES[t].hint)));
     const field = textField({ label: 'Title', value: '', limit: LIMITS.title, id: uid('t'), onInput: (v) => { title = v; } });
     modal({ title: `Add a page under ${p.title}`, body: el('div', el('div.tpl', ...buttons), field),
@@ -428,6 +620,7 @@ export function mount(host, app, params) {
   return {
     update(ev) {
       if (!model.find(pageId)) { app.go('home'); return; }
+      if (ev.type === 'media') { renderRail(); renderSide(); return; }
       renderSub();
       renderRail();
       refreshPreview(false);

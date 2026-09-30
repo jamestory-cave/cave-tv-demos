@@ -8,7 +8,9 @@
 //   GET  /api/published            -> { version, bundle, history, mediaIndex }
 //   GET  /api/draft                -> the shared draft (one draft for the whole team, not per browser)
 //   PUT  /api/draft                -> save the draft; the server keeps who and when
-//   POST /api/media                -> upload an original; the server makes 1920 and 800 wide copies
+//   POST /api/media                -> upload an original photo; the server makes 1920 and 800 wide copies
+//   POST /api/films                -> upload an MP4 (checked as the browser does); the server keeps it as media/<hash>-<h>.mp4
+//                                     and serves it with byte-range support so the TV can stream it
 //   POST /api/publish              -> { note } ; the server builds the bundle, writes immutable files,
 //                                     bumps version.json, appends history.json, returns the revision
 //   POST /api/restore/{revision}   -> republishes an earlier bundle as a new revision

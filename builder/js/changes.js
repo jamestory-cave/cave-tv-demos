@@ -6,7 +6,7 @@
 import { deepEqual } from './util.js';
 import { cleanPage } from './bundle.js';
 
-const FIELD_LABELS = { title: 'Title', kicker: 'Small caps line', subtitle: 'Subtitle', body: 'Text', image: 'Photo' };
+const FIELD_LABELS = { title: 'Title', kicker: 'Small caps line', subtitle: 'Subtitle', body: 'Text', image: 'Photo', description: 'Description' };
 const q = (s) => (s === undefined || s === null || s === '' ? 'nothing' : `"${s}"`);
 const short = (s, n = 40) => (s && s.length > n ? s.slice(0, n - 1) + '…' : s);
 const arrow = (a, b) => `${short(a) ?? 'nothing'} → ${short(b) ?? 'nothing'}`;
@@ -64,6 +64,51 @@ function diffList(a, b, lines) {
   if (order(a) !== order(b) && ai.size === bi.size && [...ai.keys()].every((k) => bi.has(k))) lines.push('Cards reordered');
 }
 
+function diffStage2(a, b, lines) {
+  // Photo frames.
+  const pa = a.photos || [], pb = b.photos || [];
+  if (!deepEqual(pa, pb)) {
+    if (pa.length !== pb.length) lines.push(`Photo frames: now ${pb.length}${pb.length ? ' (' + pb.map((p) => p.fit === 'whole' ? 'whole' : 'fill').join(', ') + ')' : ''}`);
+    else pb.forEach((p, i) => {
+      const q = pa[i];
+      const what = [];
+      if (q.image !== p.image) what.push('photo');
+      if ((q.fit || 'fill') !== (p.fit || 'fill')) what.push(p.fit === 'whole' ? 'now shows the whole image' : 'now fills the frame');
+      if ((q.caption || '') !== (p.caption || '')) what.push(p.caption ? `caption "${short(p.caption, 40)}"` : 'caption removed');
+      if (what.length) lines.push(`Photo frame ${i + 1}: ${what.join(', ')}`);
+    });
+  }
+  // Films.
+  const fa = a.films || [], fb = b.films || [];
+  if (!deepEqual(fa, fb)) {
+    const byFilm = new Map(fa.map((f) => [f.film, f]));
+    for (const f of fb) {
+      const old = byFilm.get(f.film);
+      if (!old) { lines.push(`Film added: ${f.title || 'untitled'}${f.seconds ? ` (${f.seconds} s)` : ''}`); continue; }
+      const what = [];
+      if ((old.title || '') !== (f.title || '')) what.push(`title ${arrow(old.title, f.title)}`);
+      if ((old.poster || '') !== (f.poster || '')) what.push('poster changed');
+      if (what.length) lines.push(`Film ${f.title || 'untitled'}: ${what.join(', ')}`);
+    }
+    for (const f of fa) if (!fb.some((x) => x.film === f.film)) lines.push(`Film removed: ${f.title || 'untitled'}`);
+    const order = (l) => l.map((x) => x.film).join('|');
+    if (order(fa) !== order(fb) && fa.length === fb.length && fa.every((x) => fb.some((y) => y.film === x.film))) lines.push('Films reordered');
+  }
+  // Background film.
+  const ba = a.backgroundFilm || null, bb = b.backgroundFilm || null;
+  if (!deepEqual(ba, bb)) lines.push(bb ? (ba ? 'Background film changed' : 'Background film added') : 'Background film removed');
+  // Slides.
+  const sa = a.slides || [], sb = b.slides || [];
+  if (!deepEqual(sa, sb)) {
+    if (sa.length !== sb.length) lines.push(`Slides: now ${sb.length}${sb.some((s) => s.film) ? ` (${sb.filter((s) => s.film).length} film)` : ''}`);
+    else {
+      const changed = sb.map((s, i) => (deepEqual(s, sa[i]) ? null : i + 1)).filter(Boolean);
+      const sameSet = sa.every((s) => sb.some((t) => deepEqual(s, t)));
+      lines.push(sameSet ? 'Slides reordered' : `Slide${changed.length > 1 ? 's' : ''} ${changed.join(', ')} replaced`);
+    }
+  }
+}
+
 function diffPage(a, b) {
   const lines = [];
   for (const [k, label] of Object.entries(FIELD_LABELS)) {
@@ -96,6 +141,7 @@ function diffPage(a, b) {
   if (!deepEqual(a.images || [], b.images || [])) lines.push(`Gallery: now ${(b.images || []).length} photos`);
   if (a.sections || b.sections) diffMenu(a, b, lines);
   if (a.items || b.items) diffList(a, b, lines);
+  diffStage2(a, b, lines);
   // Reordered if the pages present on both sides are no longer in the same
   // relative order, whatever was added or removed around them.
   const ka = (a.children || []).map((c) => c.id);
@@ -127,7 +173,7 @@ export function describeChanges(publishedBundle, draft) {
     }
     const cleaned = cleanPage(page) || page;
     if (!was) {
-      const type = { hub: 'section', info: 'venue page', menu: 'menu page', gallery: 'photo gallery', list: 'cards page', contact: 'contact page' }[page.type] || 'page';
+      const type = { hub: 'section', info: 'venue page', menu: 'menu page', gallery: 'photo gallery', list: 'cards page', contact: 'contact page', finished: 'finished page' }[page.type] || 'page';
       entries.push({ id, path: label, kind: 'new', lines: [`New ${type}`] });
       continue;
     }

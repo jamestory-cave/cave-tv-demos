@@ -14,6 +14,11 @@ const TOKEN_KEY = 'cave-builder.token';
 
 export class PublishConflict extends Error {}
 
+/** A blob upload (photo or film) failed before the commit: nothing was published. */
+export class UploadFailed extends Error {
+  constructor(what, reason, isFilm) { super(`Uploading ${what} failed: ${reason}`); this.what = what; this.reason = reason; this.isFilm = isFilm; }
+}
+
 export class GitHubStore {
   constructor({ transport } = {}) {
     this.transport = transport || defaultTransport;
@@ -82,8 +87,9 @@ export class GitHubStore {
    * @param {string} p.by           name typed in the Builder
    * @param {string} [p.note]
    * @param {Array}  [p.media]      [{hash, name, width, height, bytes, blobs: {1920: Blob, 800: Blob}}] to upload
+   * @param {Array}  [p.films]      [{hash, name, width, height, seconds, bytes, blob: Blob, ...}] to upload, one blob each
    * @param {object} [p.mediaIndex] current media/index.json (new media is added to it)
-   * @param {function} [p.progress] (message) => void
+   * @param {function} [p.progress] (message, fraction?) => void
    * @returns {Promise<{revision, bundlePath, commit}>}
    */
   async publish(p) {
@@ -129,11 +135,18 @@ export class GitHubStore {
     if (p.note) entry.note = p.note;
     history = [entry, ...history].slice(0, config.historyLength);
 
-    const mediaIndex = p.mediaIndex ? JSON.parse(JSON.stringify(p.mediaIndex)) : { assets: {}, media: {} };
+    const mediaIndex = p.mediaIndex ? JSON.parse(JSON.stringify(p.mediaIndex)) : { assets: {}, media: {}, films: {} };
     mediaIndex.media = mediaIndex.media || {};
+    mediaIndex.films = mediaIndex.films || {};
     const tree = [];
-    const blob = async (path, content, encoding) => {
-      const b = await this.api('POST', `${base}/blobs`, { content, encoding });
+    const blob = async (path, content, encoding, opts = {}) => {
+      let b;
+      try {
+        b = await this.api('POST', `${base}/blobs`, { content, encoding }, this.token, opts);
+      } catch (e) {
+        if (opts.what) throw new UploadFailed(opts.what, e.message, !!opts.isFilm);
+        throw e;
+      }
       tree.push({ path: `${dir}/${path}`, mode: '100644', type: 'blob', sha: b.sha });
     };
 
@@ -142,9 +155,31 @@ export class GitHubStore {
       const m = media[i];
       say(`Uploading photo ${i + 1} of ${media.length}: ${m.name}`);
       for (const [w, file] of Object.entries(m.blobs)) {
-        await blob(`media/${m.hash}-${w}.jpg`, await blobToBase64(file), 'base64');
+        await blob(`media/${m.hash}-${w}.jpg`, await blobToBase64(file), 'base64', { what: `photo "${m.name}"` });
       }
-      mediaIndex.media[m.hash] = { name: m.name, width: m.width, height: m.height, sizes: Object.keys(m.blobs).map(Number), bytes: m.bytes, addedAt: publishedAt, by: p.by || '' };
+      mediaIndex.media[m.hash] = { name: m.name, width: m.width, height: m.height, sizes: Object.keys(m.blobs).map(Number), bytes: m.bytes, addedAt: publishedAt, by: p.by || '', poster: m.poster || undefined };
+    }
+
+    // Films: one blob each, base64, with progress per file. A failure here
+    // stops the publish before anything is committed. The index records the
+    // poster the bundle references for the film (a poster chosen from Media
+    // is not on the film's own record).
+    const posters = postersIn(p.bundle);
+    const films = p.films || [];
+    for (let i = 0; i < films.length; i++) {
+      const f = films[i];
+      const label = `film ${i + 1} of ${films.length}: ${f.name} (${Math.round(f.bytes / 1048576)} MB)`;
+      say(`Encoding ${label}…`);
+      const content = await blobToBase64(f.blob);
+      say(`Uploading ${label}… 0%`, 0);
+      await blob(`media/${f.hash}-${f.height}.mp4`, content, 'base64', {
+        what: `film "${f.name}"`, isFilm: true,
+        onProgress: (frac) => say(`Uploading ${label}… ${Math.round(frac * 100)}%`, frac),
+      });
+      mediaIndex.films[f.hash] = {
+        name: f.name, width: f.width, height: f.height, seconds: f.seconds, bytes: f.bytes, mbps: f.mbps, codec: f.codec, audio: f.audio,
+        audioCodec: f.audioCodec || undefined, silent: !!f.silent, poster: posters.get(`media/${f.hash}-${f.height}.mp4`) || f.poster || null, addedAt: publishedAt, by: p.by || '',
+      };
     }
 
     say('Writing the content…');
@@ -169,23 +204,57 @@ export class GitHubStore {
 
   // ---- low level ----
 
-  async api(method, path, body, token = this.token) {
-    return this.transport(method, config.apiBase + path, body, token);
+  async api(method, path, body, token = this.token, opts = {}) {
+    return this.transport(method, config.apiBase + path, body, token, opts);
   }
 }
 
-async function defaultTransport(method, url, body, token) {
+/** film path -> the poster path a bundle uses with it (film blocks, background films, film slides). */
+export function postersIn(bundle) {
+  const map = new Map();
+  const walk = (page) => {
+    for (const f of page.films || []) if (f.film && f.poster && !map.has(f.film)) map.set(f.film, f.poster);
+    if (page.backgroundFilm?.film && page.backgroundFilm.poster && !map.has(page.backgroundFilm.film)) map.set(page.backgroundFilm.film, page.backgroundFilm.poster);
+    for (const sl of page.slides || []) if (sl.film && sl.poster && !map.has(sl.film)) map.set(sl.film, sl.poster);
+    for (const c of page.children || []) walk(c);
+  };
+  if (bundle?.home) walk(bundle.home);
+  return map;
+}
+
+const FRIENDLY = { 401: 'The passcode was not accepted.', 403: 'The passcode is not allowed to do this.', 404: 'The repository could not be found with this passcode.', 413: 'GitHub refused the file as too large.', 422: 'GitHub could not accept the file.' };
+
+function apiError(status, data) {
+  const err = new Error(FRIENDLY[status] || (data?.message ? `GitHub said: ${data.message}` : `GitHub replied with an error (${status})`));
+  err.status = status;
+  return err;
+}
+
+/** fetch for small calls; XMLHttpRequest when upload progress is wanted (big film blobs). */
+async function defaultTransport(method, url, body, token, opts = {}) {
   const headers = { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body) headers['Content-Type'] = 'application/json';
+  if (opts.onProgress && body) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open(method, url);
+      for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
+      xhr.upload.onprogress = (e) => { if (e.lengthComputable) opts.onProgress(e.loaded / e.total); };
+      xhr.onerror = () => reject(new Error('The connection dropped during the upload.'));
+      xhr.ontimeout = () => reject(new Error('The upload timed out.'));
+      xhr.onload = () => {
+        let data = null;
+        try { data = JSON.parse(xhr.responseText); } catch { /* no body */ }
+        if (xhr.status >= 200 && xhr.status < 300) resolve(data); else reject(apiError(xhr.status, data));
+      };
+      xhr.timeout = 10 * 60 * 1000;
+      xhr.send(JSON.stringify(body));
+    });
+  }
   const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
   let data = null;
   try { data = await res.json(); } catch { /* no body */ }
-  if (!res.ok) {
-    const friendly = { 401: 'The passcode was not accepted.', 403: 'The passcode is not allowed to do this.', 404: 'The repository could not be found with this passcode.' };
-    const err = new Error(friendly[res.status] || (data?.message ? `GitHub said: ${data.message}` : `GitHub replied with an error (${res.status})`));
-    err.status = res.status;
-    throw err;
-  }
+  if (!res.ok) throw apiError(res.status, data);
   return data;
 }
