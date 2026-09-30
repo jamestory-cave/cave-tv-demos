@@ -18,10 +18,14 @@ import * as mediaScreen from './screens/media.js';
 import * as hotel from './screens/hotel.js';
 import * as publish from './screens/publish.js';
 import * as settings from './screens/settings.js';
+import * as guide from './screens/guide.js';
 import { feedbackModal } from './screens/feedback.js';
+import { mediaPathsIn } from './bundle.js';
+import { FILM } from './media.js';
 
-const SCREENS = { home, editor, menus, media: mediaScreen, hotel, publish, settings };
+const SCREENS = { home, editor, menus, media: mediaScreen, hotel, publish, settings, guide };
 const NAV = [['home', 'Home'], ['menus', 'Menus'], ['media', 'Media'], ['hotel', 'Hotel details'], ['publish', 'Publish'], ['settings', 'Settings']];
+const NAV_ALIAS = { editor: 'home', guide: 'media' };
 
 export const app = {
   browser: new BrowserStore(),
@@ -42,7 +46,14 @@ export const app = {
   },
 
   changes() { return describeChanges(model.published?.bundle, model.draft); },
-  validation() { return validateAll(model.draft, { imageSize: (src) => this.media.size(src), imageKnown: (src) => this.media.known(src) }); },
+  validation() { return validateAll(model.draft, { imageSize: (src) => this.media.size(src), imageKnown: (src) => this.media.known(src), filmInfo: (src) => this.media.film(src) }); },
+
+  /** Pending photos and films the bundle actually uses, so nothing unused goes to the repository. */
+  mediaFor(bundle) {
+    const used = new Set(mediaPathsIn(bundle));
+    const pending = this.media.pendingRecords().filter((m) => [...used].some((u) => u.includes(m.hash)));
+    return { photos: pending.filter((m) => m.kind !== 'film'), films: pending.filter((m) => m.kind === 'film') };
+  },
 
   /**
    * Everything the Publish screen needs: the bundle that would go live, which
@@ -77,7 +88,11 @@ export const app = {
     if (!(bundle.home.children || []).length) stop.push('Nothing would show on the TV: every section is hidden or held back. Show or fix at least one section.');
     for (const b of validation.get('home')?.blockers || []) stop.push(`Home: ${b.message}`);
     for (const b of validation.get('hotel')?.blockers || []) stop.push(`Hotel details: ${b.message}`);
-    return { validation, bundle, heldBack, frozen, entries, live, summary, stop, canPublish: live.length > 0 && !stop.length };
+    const media = this.mediaFor(bundle);
+    const filmBytes = media.films.reduce((a, f) => a + (f.bytes || 0), 0);
+    const warnings = [];
+    if (filmBytes > FILM.publishWarnBytes) warnings.push(`This publish uploads ${Math.round(filmBytes / 1048576)} MB of film. GitHub Pages allows about 1 GB for the whole site, so keep an eye on the total; publish in smaller batches if it fails.`);
+    return { validation, bundle, heldBack, frozen, entries, live, summary, stop, media, filmBytes, warnings, canPublish: live.length > 0 && !stop.length };
   },
 
   publisherName() { return this.browser.prefs().by || ''; },
@@ -136,7 +151,7 @@ function topBar() {
   bar.append(el('div.brand', 'Cave Builder', el('small', config.hotelName)));
   const nav = el('nav.nav', { 'aria-label': 'Screens' });
   for (const [key, label] of NAV) {
-    nav.append(el('button', { type: 'button', class: (app.screen === key || (key === 'home' && app.screen === 'editor')) ? 'on' : '', onclick: () => app.go(key) }, label));
+    nav.append(el('button', { type: 'button', class: (app.screen === key || NAV_ALIAS[app.screen] === key) ? 'on' : '', onclick: () => app.go(key) }, label));
   }
   bar.append(nav, el('span.spacer'));
   const n = app.changes().entries.length;
@@ -210,6 +225,7 @@ async function boot() {
   }
 
   model.on((ev) => {
+    if (ev.type === 'media' && app.current?.update) { app.current.update(ev); return; }
     if (ev.type === 'change') {
       touched = true;
       save();
@@ -276,4 +292,6 @@ window.addEventListener('error', (e) => showError(e.message + (e.filename ? ` ($
 window.addEventListener('unhandledrejection', (e) => showError(e.reason?.message || e.reason));
 
 export { model, toast, modal, _el as el };
+// For the developer harness and QA scripts (nothing secret lives here that is not already in this browser).
+window.cave = { app, model };
 boot();

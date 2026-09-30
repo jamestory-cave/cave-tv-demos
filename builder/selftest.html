@@ -19,7 +19,7 @@
 <body>
 <main>
   <h1>Cave Builder self-test</h1>
-  <p class="muted">Loads the published bundle, runs it through the editor model and the bundle generator, and checks the output equals the input (ignoring key order and whitespace). Then exercises the change list, hiding, delete and undo, and the publish call sequence against a fake GitHub.</p>
+  <p class="muted">Loads the published bundle, runs it through the editor model and the bundle generator, and checks the output equals the input (ignoring key order and whitespace). Then exercises the change list, hiding, delete and undo, the publish call sequence against a fake GitHub, and the stage-2 fields: photo frames, films, background film, finished pages, the MP4 probe and film uploads.</p>
   <div id="summary">Running…</div>
   <div id="results"></div>
   <h2 style="margin-top:24px">Publish call sequence (fake transport)</h2>
@@ -41,6 +41,10 @@ import { validateAll } from './js/validate.js';
 import { GitHubStore } from './js/stores/github.js';
 import { encodeQR, qrSVG } from './js/preview/qr.js';
 import { threeWayMerge } from './js/merge.js';
+import { probeMP4 } from './js/mp4.js';
+import { parseMediaPath, shapeOf, slideProblem, prepareSlide, slidePathFor, MediaRegistry } from './js/media.js';
+import { postersIn } from './js/stores/github.js';
+import { mediaPathsIn } from './js/bundle.js';
 
 const results = document.getElementById('results');
 let pass = 0, fail = 0;
@@ -218,6 +222,177 @@ async function run() {
   let conflict = null;
   try { await store.publish({ bundle: b2, basedOnRevision: published.version.revision - 1, summary: [], by: 'x' }); } catch (e) { conflict = e; }
   check('Publishing on a stale revision is refused', conflict && conflict.constructor.name === 'PublishConflict', conflict?.message);
+
+  // 9. Stage 2: photo frames, films, background film, finished pages.
+  {
+    const base = clone(published.bundle);
+    const firepit = findIn(base, 'firepit').page;
+    firepit.photos = [{ image: 'media/aaaaaaaaaaaa-1920.jpg', fit: 'whole', caption: 'Our mark' }, { image: 'media/bbbbbbbbbbbb-1920.jpg', fit: 'fill' }];
+    firepit.films = [{ film: 'media/cccccccccccc-1080.mp4', poster: 'media/dddddddddddd-1920.jpg', title: 'Your lighting scenes', seconds: 42 }];
+    firepit.backgroundFilm = { film: 'media/eeeeeeeeeeee-1080.mp4', poster: 'media/ffffffffffff-1920.jpg' };
+    addPage(base, 'home', { id: 'fire-plan-test', type: 'finished', title: 'Fire plan', description: 'Escape routes and assembly point', image: 'media/111111111111-1920.jpg',
+      slides: [{ image: 'media/111111111111-1920.jpg' }, { image: 'media/222222222222-1920.jpg' }, { film: 'media/cccccccccccc-1080.mp4', poster: 'media/dddddddddddd-1920.jpg' }], qr: { label: 'Leave a review', url: 'https://www.cavehotels.com/' } });
+    model.load({ ...published, bundle: base }, null);
+    const sizes = { 'media/aaaaaaaaaaaa-1920.jpg': { width: 900, height: 200 }, 'media/bbbbbbbbbbbb-1920.jpg': { width: 2400, height: 1600 }, 'media/dddddddddddd-1920.jpg': { width: 1920, height: 1080 }, 'media/ffffffffffff-1920.jpg': { width: 1920, height: 1080 }, 'media/111111111111-1920.jpg': { width: 3840, height: 2160 }, 'media/222222222222-1920.jpg': { width: 1920, height: 1080 } };
+    const filmsInfo = { 'media/cccccccccccc-1080.mp4': { name: 'Lighting', width: 1920, height: 1080, seconds: 42, audio: true, silent: false }, 'media/eeeeeeeeeeee-1080.mp4': { name: 'Pool loop', width: 1920, height: 1080, seconds: 12, audio: false, silent: false } };
+    const ctx = { imageSize: (s) => sizes[s] || null, imageKnown: (s) => !parseMediaPath(s) || s in sizes || s in filmsInfo, filmInfo: (s) => filmsInfo[s] || null };
+    const v9 = validateAll(model.draft, ctx);
+    check('Stage-2 content with no problems has no blockers', ![...v9.values()].some((r) => r.blockers.length), [...v9].filter(([, r]) => r.blockers.length).map(([id, r]) => id + ': ' + r.blockers.map((b) => b.message).join('; ')).join(' | '));
+    const b9 = buildBundle(model.draft, { revision: base.version, held: v9 }).bundle;
+    check('Bundle round-trips the stage-2 fields exactly (ignoring key order)', canonical(b9) === canonical(base), canonical(findIn(b9, 'firepit').page.photos));
+    const fp = findIn(b9, 'fire-plan-test').page;
+    check('Finished page emits id, type, title, description, image, slides, qr and nothing else', Object.keys(fp).sort().join() === ['id', 'type', 'title', 'description', 'image', 'slides', 'qr'].sort().join(), Object.keys(fp).join());
+    check('Film slide emits {film, poster}; photo slide emits {image}', canonical(fp.slides[2]) === canonical({ film: 'media/cccccccccccc-1080.mp4', poster: 'media/dddddddddddd-1920.jpg' }) && canonical(fp.slides[0]) === canonical({ image: 'media/111111111111-1920.jpg' }));
+    check('Film block emits film, poster, title, seconds as an integer', canonical(findIn(b9, 'firepit').page.films[0]) === canonical({ film: 'media/cccccccccccc-1080.mp4', poster: 'media/dddddddddddd-1920.jpg', title: 'Your lighting scenes', seconds: 42 }));
+    check('Photo frame fit defaults to fill and caption is optional', canonical(findIn(b9, 'firepit').page.photos[1]) === canonical({ image: 'media/bbbbbbbbbbbb-1920.jpg', fit: 'fill' }));
+    check('A page without stage-2 content emits none of the new keys', !['photos', 'films', 'backgroundFilm', 'slides', 'description'].some((k) => k in findIn(b9, 'golf').page));
+    check('mediaPathsIn finds photos and films', mediaPathsIn(b9).includes('media/cccccccccccc-1080.mp4') && mediaPathsIn(b9).includes('media/aaaaaaaaaaaa-1920.jpg'));
+    const ch9 = describeChanges(published.bundle, model.draft).summary;
+    check('Change list names frames, films, background film and the new finished page', ch9.some((s) => /Photo frames: now 2/.test(s)) && ch9.some((s) => /Film added: Your lighting scenes \(42 s\)/.test(s)) && ch9.some((s) => /Background film added/.test(s)) && ch9.some((s) => /Fire plan: New finished page/.test(s)), ch9.join(' | '));
+    // Blockers.
+    model.commit('no slides', (d) => { findIn(d, 'fire-plan-test').page.slides = []; });
+    check('A finished page with no slides is a blocker', validateAll(model.draft, ctx).get('fire-plan-test').blockers.some((b) => /No slides/.test(b.message)));
+    model.undo();
+    model.commit('no poster', (d) => { delete findIn(d, 'firepit').page.films[0].poster; });
+    check('A film without a poster is a blocker', validateAll(model.draft, ctx).get('firepit').blockers.some((b) => /no poster/i.test(b.message)));
+    model.undo();
+    model.commit('noisy bg', (d) => { findIn(d, 'firepit').page.backgroundFilm = { film: 'media/cccccccccccc-1080.mp4' }; });
+    check('A background film with a sound track is a blocker', validateAll(model.draft, ctx).get('firepit').blockers.some((b) => /sound track/.test(b.message)));
+    model.undo();
+    model.commit('seven frames', (d) => { const p = findIn(d, 'firepit').page; p.photos = Array.from({ length: 7 }, () => ({ image: 'media/bbbbbbbbbbbb-1920.jpg', fit: 'fill' })); });
+    check('More than 6 photo frames is a blocker', validateAll(model.draft, ctx).get('firepit').blockers.some((b) => /7 photo frames/.test(b.message)));
+    model.undo();
+    model.commit('small fill', (d) => { findIn(d, 'firepit').page.photos[0].fit = 'fill'; });
+    check('A 900 x 200 logo set to fill is a blocker; set to whole it is allowed', validateAll(model.draft, ctx).get('firepit').blockers.some((b) => /Photo frame 1 is too small/.test(b.message)) && !v9.get('firepit').blockers.length);
+    model.undo();
+    model.commit('bad slide', (d) => { findIn(d, 'fire-plan-test').page.slides[1].image = 'media/bbbbbbbbbbbb-1920.jpg'; });
+    check('A slide that is not 16:9 is a blocker', validateAll(model.draft, ctx).get('fire-plan-test').blockers.some((b) => /not 16:9/.test(b.message)));
+    model.undo();
+    model.commit('no description', (d) => { delete findIn(d, 'fire-plan-test').page.description; });
+    check('A finished page without a description is a blocker', validateAll(model.draft, ctx).get('fire-plan-test').blockers.some((b) => /No description/.test(b.message)));
+    model.undo();
+    check('Shape check: 900 x 200 is wide, 1200 x 1200 is tall, 2400 x 1600 is fine', shapeOf({ width: 900, height: 200 }) === 'wide' && shapeOf({ width: 1200, height: 1200 }) === 'tall' && shapeOf({ width: 2400, height: 1600 }) === 'ok');
+    check('Slide rule: 3000 x 2000 refused, 1600 x 900 refused, 1920 x 1080 and 3840 x 2160 accepted', !!slideProblem({ width: 3000, height: 2000 }) && !!slideProblem({ width: 1600, height: 900 }) && !slideProblem({ width: 1920, height: 1080 }) && !slideProblem({ width: 3840, height: 2160 }));
+    check('Media paths parse for films and photos', canonical(parseMediaPath('media/9c1d9c1d9c1d-1080.mp4')) === canonical({ hash: '9c1d9c1d9c1d', height: 1080, kind: 'film' }) && parseMediaPath('media/9c1d9c1d9c1d-1920.jpg').kind === 'photo');
+
+    // A publish with a film: one blob per film, named by height, and the index carries it.
+    const calls9 = [];
+    const fake9 = async (method, url, body, token, opts) => {
+      const path = url.replace(config.apiBase, '');
+      calls9.push(`${method} ${path}`);
+      if (opts?.onProgress) opts.onProgress(1);
+      if (method === 'GET' && path.endsWith('/git/ref/heads/main')) return { object: { sha: 'aaaa1111' } };
+      if (method === 'GET' && path.includes('/git/commits/')) return { tree: { sha: 'tree0000' } };
+      if (method === 'GET' && path.includes('version.json')) return { content: fakeVersion };
+      if (method === 'GET' && path.includes('history.json')) return { content: fakeHistory };
+      if (method === 'POST' && path.endsWith('/git/blobs')) return { sha: 'blob' + calls9.length };
+      if (method === 'POST' && path.endsWith('/git/trees')) { calls9.push('   tree paths: ' + body.tree.map((t) => t.path).join(', ')); return { sha: 'tree1111' }; }
+      if (method === 'POST' && path.endsWith('/git/commits')) return { sha: 'commit2222' };
+      if (method === 'PATCH' && path.endsWith('/git/refs/heads/main')) return { object: { sha: body.sha } };
+      throw Object.assign(new Error('unexpected ' + method + ' ' + path), { status: 500 });
+    };
+    const store9 = new GitHubStore({ transport: fake9 });
+    store9.setToken('');
+    const mp4 = new Blob([new Uint8Array([0, 0, 0, 8, 102, 116, 121, 112])], { type: 'video/mp4' });
+    const r9 = await store9.publish({ bundle: b9, basedOnRevision: published.version.revision, summary: [], by: 'Self-test', media: [],
+      films: [{ hash: 'cccccccccccc', name: 'Lighting', width: 1920, height: 1080, seconds: 42, bytes: 8, mbps: 6, codec: 'avc1', audio: true, silent: false, poster: 'media/dddddddddddd-1920.jpg', blob: mp4 }], mediaIndex: published.mediaIndex });
+    check('Publish writes a film as media/<hash>-1080.mp4 in the same commit', calls9.some((c) => c.includes('media/cccccccccccc-1080.mp4')) && calls9.filter((c) => c.includes('/git/commits') && c.startsWith('POST')).length === 1);
+    check('media/index.json carries the film with its length, size and poster', r9.mediaIndex.films.cccccccccccc?.seconds === 42 && r9.mediaIndex.films.cccccccccccc.poster === 'media/dddddddddddd-1920.jpg');
+    const failing = new GitHubStore({ transport: async (m, u, b, t, o) => { if (m === 'POST' && u.endsWith('/git/blobs') && o?.isFilm) { const e = new Error('GitHub said: Server Error'); e.status = 500; throw e; } return fake9(m, u, b, t, o); } });
+    failing.setToken('');
+    let err9 = null;
+    try { await failing.publish({ bundle: b9, basedOnRevision: published.version.revision, summary: [], by: 'x', films: [{ hash: 'cccccccccccc', name: 'Lighting', height: 1080, bytes: 8, blob: mp4 }], mediaIndex: published.mediaIndex }); } catch (e) { err9 = e; }
+    check('A failed film upload stops the publish before the commit, naming the film', err9?.constructor.name === 'UploadFailed' && /Lighting/.test(err9.what) && !calls9.slice(-1)[0].includes('/git/commits'), err9?.message);
+
+    // MP4 probe on a synthetic file: ftyp + moov (video avc1 1920 x 1080, audio mp4a) + mdat.
+    const enc = new TextEncoder();
+    const u32 = (n) => [n >>> 24 & 255, n >>> 16 & 255, n >>> 8 & 255, n & 255];
+    const box = (type, ...parts) => { const body = parts.flat(); return [...u32(8 + body.length), ...enc.encode(type), ...body]; };
+    const zeros = (n) => new Array(n).fill(0);
+    const tkhd = (w, h) => box('tkhd', zeros(76), u32(w << 16), u32(h << 16));
+    const hdlr = (k) => box('hdlr', zeros(8), [...enc.encode(k)], zeros(13));
+    const visual = box('avc1', zeros(6), [0, 1], zeros(16), [w16(1920), w16(1080)].flat(), zeros(50));
+    function w16(n) { return [n >>> 8 & 255, n & 255]; }
+    const audio = box('mp4a', zeros(6), [0, 1], zeros(8), w16(2), w16(16), zeros(4), u32(48000 << 16));
+    const stsd = (entry) => box('stsd', zeros(4), u32(1), entry);
+    const trak = (kind, entry, w, h) => box('trak', tkhd(w, h), box('mdia', hdlr(kind), box('minf', box('stbl', stsd(entry)))));
+    const mvhd = box('mvhd', zeros(12), u32(1000), u32(42000), zeros(80));
+    const file = new Uint8Array([...box('ftyp', [...enc.encode('isom')], u32(512), [...enc.encode('isom')], [...enc.encode('avc1')]), ...box('moov', mvhd, trak('vide', visual, 1920, 1080), trak('soun', audio, 0, 0)), ...box('mdat', zeros(16))]);
+    const pr = probeMP4(file.buffer);
+    check('MP4 probe reads brand, H.264 video at 1920 x 1080, AAC audio, 42 s, index first', pr.isMP4 && pr.video?.codec === 'avc1' && pr.video.width === 1920 && pr.video.height === 1080 && pr.audio?.codec === 'mp4a' && Math.round(pr.duration) === 42 && pr.moovFirst === true, JSON.stringify({ brand: pr.brand, video: pr.video, audio: pr.audio, duration: pr.duration, moovFirst: pr.moovFirst }));
+    const hevc = new Uint8Array([...box('ftyp', [...enc.encode('isom')], u32(512)), ...box('mdat', zeros(16)), ...box('moov', mvhd, trak('vide', box('hvc1', zeros(6), [0, 1], zeros(16), w16(1920), w16(1080), zeros(50)), 1920, 1080))]);
+    const pr2 = probeMP4(hevc.buffer);
+    check('MP4 probe spots HEVC, no audio track, and an index at the end', pr2.video?.codec === 'hvc1' && pr2.audio === null && pr2.moovFirst === false);
+    check('MP4 probe spots a QuickTime brand', probeMP4(new Uint8Array(box('ftyp', [...enc.encode('qt  ')], u32(0))).buffer).isQuickTime === true);
+
+    // QA2-2: stage-2 fields on page types the contract does not allow are left out of the bundle and warned about.
+    {
+      const odd = clone(published.bundle);
+      const menu = findIn(odd, 'firepit-menu').page;
+      menu.photos = [{ image: 'media/bbbbbbbbbbbb-1920.jpg', fit: 'fill' }];
+      menu.slides = [{ image: 'media/111111111111-1920.jpg' }];
+      menu.description = 'not allowed here';
+      const gal = findIn(odd, 'golf-gallery').page;
+      gal.films = [{ film: 'media/cccccccccccc-1080.mp4', poster: 'media/dddddddddddd-1920.jpg' }];
+      gal.backgroundFilm = { film: 'media/eeeeeeeeeeee-1080.mp4' };
+      const fin = { id: 'fin-odd', type: 'finished', title: 'Odd', description: 'd', image: 'media/111111111111-1920.jpg', slides: [{ image: 'media/111111111111-1920.jpg' }], photos: [{ image: 'media/bbbbbbbbbbbb-1920.jpg' }], films: [{ film: 'media/cccccccccccc-1080.mp4', poster: 'media/dddddddddddd-1920.jpg' }] };
+      addPage(odd, 'home', fin);
+      model.load({ ...published, bundle: odd }, null);
+      const vo = validateAll(model.draft, ctx);
+      const bo = buildBundle(model.draft, { revision: 1, held: new Map() }).bundle;
+      const om = findIn(bo, 'firepit-menu').page, og = findIn(bo, 'golf-gallery').page, of = findIn(bo, 'fin-odd').page;
+      check('QA2-2: frames, slides and description are dropped from a menu page; films and background from a gallery; frames and films from a finished page', !('photos' in om) && !('slides' in om) && !('description' in om) && !('films' in og) && !('backgroundFilm' in og) && !('photos' in of) && !('films' in of) && 'slides' in of && 'description' in of, Object.keys(om).join() + ' / ' + Object.keys(og).join() + ' / ' + Object.keys(of).join());
+      check('QA2-2: the draft is warned about each field that will be left out', vo.get('firepit-menu').warnings.filter((w) => /cannot show/.test(w.message)).length === 3 && vo.get('golf-gallery').warnings.filter((w) => /cannot show/.test(w.message)).length === 2 && vo.get('fin-odd').warnings.filter((w) => /cannot show/.test(w.message)).length === 2, vo.get('firepit-menu').warnings.map((w) => w.message).join(' | '));
+      check('QA2-2: a page still needs its own fields to be allowed (info page keeps frames and films)', 'photos' in findIn(b9, 'firepit').page && 'films' in findIn(b9, 'firepit').page);
+      model.load({ ...published, bundle: base }, null);
+    }
+
+    // QA2-5: media/index.json records the poster the bundle uses with a film, even when it was chosen from Media.
+    {
+      const pm = postersIn(b9);
+      check('QA2-5: postersIn maps film blocks, background films and film slides to their posters', pm.get('media/cccccccccccc-1080.mp4') === 'media/dddddddddddd-1920.jpg' && pm.get('media/eeeeeeeeeeee-1080.mp4') === 'media/ffffffffffff-1920.jpg');
+      const store5 = new GitHubStore({ transport: fake9 });
+      store5.setToken('');
+      const r5 = await store5.publish({ bundle: b9, basedOnRevision: published.version.revision, summary: [], by: 'x', media: [],
+        films: [{ hash: 'cccccccccccc', name: 'Lighting', width: 1920, height: 1080, seconds: 42, bytes: 8, blob: mp4, poster: null }, { hash: 'eeeeeeeeeeee', name: 'Pool loop', width: 1920, height: 1080, seconds: 12, bytes: 8, blob: mp4, poster: null }], mediaIndex: published.mediaIndex });
+      check('QA2-5: a film published with no poster on its record gets the poster from the bundle in media/index.json', r5.mediaIndex.films.cccccccccccc.poster === 'media/dddddddddddd-1920.jpg' && r5.mediaIndex.films.eeeeeeeeeeee.poster === 'media/ffffffffffff-1920.jpg', JSON.stringify(r5.mediaIndex.films.cccccccccccc));
+    }
+
+    // QA2-6 and QA2-3: the registry knows which size variants exist, and drops an unused re-captured poster.
+    {
+      const fakeBrowser = { deleted: [], async listMedia() { return []; }, async putMedia() {}, async deleteMedia(h) { this.deleted.push(h); }, async markPublished() {} };
+      const reg = new MediaRegistry({ browserStore: fakeBrowser, githubStore: { mediaURL: (p) => p } });
+      await reg.load({ assets: {}, media: { aaaaaaaaaaaa: { name: 'HD', width: 1920, height: 1080, sizes: [1920, 800] }, bbbbbbbbbbbb: { name: '4K', width: 3840, height: 2160, sizes: [3840, 1920, 800] }, cccccccccccc: { name: 'old', width: 1920, height: 1080 } }, films: { ffffffffffff: { name: 'Film', height: 1080 } } });
+      const tiny = new Blob([1]);
+      await reg.add({ kind: 'photo', hash: 'dddddddddddd', name: 'Pending HD', width: 1920, height: 1080, blobs: { 1920: tiny, 800: tiny } });
+      check('QA2-6: -3840 is known only for a photo that has that copy (published or pending)', !reg.known('media/aaaaaaaaaaaa-3840.jpg') && reg.known('media/aaaaaaaaaaaa-1920.jpg') && reg.known('media/bbbbbbbbbbbb-3840.jpg') && reg.known('media/cccccccccccc-1920.jpg') && !reg.known('media/cccccccccccc-3840.jpg') && !reg.known('media/dddddddddddd-3840.jpg') && reg.known('media/dddddddddddd-800.jpg'));
+      check('QA2-6: a film path must match the record\'s height; unknown hashes are unknown', reg.known('media/ffffffffffff-1080.mp4') && !reg.known('media/ffffffffffff-720.mp4') && !reg.known('media/999999999999-1920.jpg') && reg.known('hero-eat'));
+      await reg.add({ kind: 'photo', hash: 'e1e1e1e1e1e1', name: 'Poster: old', width: 1920, height: 1080, poster: true, blobs: { 1920: tiny, 800: tiny } });
+      await reg.add({ kind: 'photo', hash: 'e2e2e2e2e2e2', name: 'Poster: kept', width: 1920, height: 1080, poster: true, blobs: { 1920: tiny, 800: tiny } });
+      await reg.add({ kind: 'photo', hash: 'e3e3e3e3e3e3', name: 'A real photo', width: 1920, height: 1080, blobs: { 1920: tiny, 800: tiny } });
+      const uses = new Map([['media/e2e2e2e2e2e2-1920.jpg', [{ pageId: 'x', use: 'Poster' }]]]);
+      const d1 = await reg.dropUnusedCapture('media/e1e1e1e1e1e1-1920.jpg', uses);
+      const d2 = await reg.dropUnusedCapture('media/e2e2e2e2e2e2-1920.jpg', uses);
+      const d3 = await reg.dropUnusedCapture('media/e3e3e3e3e3e3-1920.jpg', uses);
+      check('QA2-3: an unused previous capture is removed from pending media; a used one and an ordinary photo are kept', d1 && !d2 && !d3 && !reg.pending.has('e1e1e1e1e1e1') && reg.pending.has('e2e2e2e2e2e2') && reg.pending.has('e3e3e3e3e3e3') && fakeBrowser.deleted.join() === 'e1e1e1e1e1e1');
+    }
+
+    // Slides keep a native 3840 copy when the upload is 4K (PROTOTYPE.md 2b); other photos are unchanged.
+    const art = (w, h) => new Promise((res) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d'); x.fillStyle = '#111'; x.fillRect(0, 0, w, h); x.fillStyle = '#b7996d'; x.fillRect(w * 0.1, h * 0.3, w * 0.4, h * 0.4); c.toBlob((b) => res(new File([b], `art-${w}.png`, { type: 'image/png' })), 'image/png'); });
+    const dims = (blob) => new Promise((res) => { const i = new Image(); i.onload = () => { URL.revokeObjectURL(i.src); res([i.naturalWidth, i.naturalHeight]); }; i.src = URL.createObjectURL(blob); });
+    const s4k = await prepareSlide(await art(3840, 2160));
+    const [w4, h4] = await dims(s4k.blobs[3840]);
+    check('A 4K slide makes 3840, 1920 and 800 copies and references media/<hash>-3840.jpg', Object.keys(s4k.blobs).map(Number).sort((a, b) => b - a).join() === '3840,1920,800' && w4 === 3840 && h4 === 2160 && s4k.slidePath === `media/${s4k.hash}-3840.jpg` && s4k.blobs[3840].type === 'image/jpeg', `${Object.keys(s4k.blobs).join(',')} ${w4}x${h4} ${s4k.slidePath}`);
+    const sHD = await prepareSlide(await art(1920, 1080));
+    check('An HD slide makes only 1920 and 800 (never upscaled) and references -1920.jpg', Object.keys(sHD.blobs).map(Number).sort((a, b) => b - a).join() === '1920,800' && sHD.slidePath === `media/${sHD.hash}-1920.jpg` && sHD.warnings.length === 1);
+    check('slidePathFor picks 3840 only when that size exists', slidePathFor('abcdefabcdef', [3840, 1920, 800]) === 'media/abcdefabcdef-3840.jpg' && slidePathFor('abcdefabcdef', [1920, 800]) === 'media/abcdefabcdef-1920.jpg');
+    const calls4k = [];
+    const store4k = new GitHubStore({ transport: async (m, u, b, t, o) => { const r = await fake9(m, u, b, t, o); if (m === 'POST' && u.endsWith('/git/trees')) calls4k.push(...b.tree.map((x) => x.path)); return r; } });
+    store4k.setToken('');
+    const r4k = await store4k.publish({ bundle: b9, basedOnRevision: published.version.revision, summary: [], by: 'x', media: [{ hash: s4k.hash, name: 'Art', width: 3840, height: 2160, bytes: 10, blobs: s4k.blobs }], mediaIndex: published.mediaIndex });
+    check('Publishing a 4K slide writes the 3840, 1920 and 800 files and records the sizes', calls4k.includes(`tv/s1/media/${s4k.hash}-3840.jpg`) && calls4k.includes(`tv/s1/media/${s4k.hash}-1920.jpg`) && calls4k.includes(`tv/s1/media/${s4k.hash}-800.jpg`) && r4k.mediaIndex.media[s4k.hash].sizes.includes(3840), calls4k.filter((c) => c.includes(s4k.hash)).join(', '));
+    model.load(published, null);
+  }
 
   // 8. QR.
   const text = 'https://www.cavehotels.com/book-a-table/';

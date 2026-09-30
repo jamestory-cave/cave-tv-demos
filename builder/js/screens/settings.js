@@ -61,13 +61,19 @@ export function mount(host, app) {
     box.append(el('p.muted.tiny', 'The passcode is never written into the repository or the Builder\'s code, and it is only ever sent to api.github.com.'));
     main.append(box);
 
+    // ---- guide ----
+    const g = el('div.panel', { style: { maxWidth: '640px', marginBottom: '16px' } });
+    g.append(el('h2', 'Guide for the visual team'), el('p.small.muted', { style: { marginBottom: '8px' } }, 'Artwork and film rules, the Adobe Media Encoder export recipe, and the safe-area template to download.'));
+    g.append(el('button.btn.sm', { type: 'button', onclick: () => app.go('guide') }, 'Open the guide'));
+    main.append(g);
+
     // ---- where things go ----
     const where = el('div.panel', { style: { maxWidth: '640px' } });
     where.append(el('h2', 'This browser'));
     const details = el('details', { style: { marginBottom: '10px' } }, el('summary.small', { style: { cursor: 'pointer' } }, 'Technical details'),
       el('dl.kv', el('dt', 'TVs read from'), el('dd', el('code', config.baseURL)), el('dt', 'Published to'), el('dd', el('code', `${config.owner}/${config.repo}`), ` (branch ${config.branch}, folder ${config.contentPath})`), el('dt', 'This Builder'), el('dd', el('code', location.href.split('#')[0]))));
     where.append(details);
-    where.append(el('button.btn.sm.danger', { type: 'button', onclick: async () => { if (await confirmModal('Clear everything in this browser?', 'Draft, uploaded photos, name and passcode are all removed. What is published is untouched.', { okLabel: 'Clear', danger: true })) { await app.browser.clearAll(); app.github.forgetToken(); localStorage.clear(); location.reload(); } } }, 'Clear everything kept in this browser'));
+    where.append(el('button.btn.sm.danger', { type: 'button', onclick: async () => { if (await confirmModal('Clear everything in this browser?', 'Draft, uploaded photos and films, name and passcode are all removed. What is published is untouched.', { okLabel: 'Clear', danger: true })) { await app.browser.clearAll(); app.github.forgetToken(); localStorage.clear(); location.reload(); } } }, 'Clear everything kept in this browser'));
     main.append(where);
   }
 

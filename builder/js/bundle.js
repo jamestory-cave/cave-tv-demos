@@ -1,9 +1,23 @@
 // Draft document -> ContentBundle JSON exactly as Content.swift decodes it.
 // Keys come out in the order Content.swift declares them, empty values are
 // left out, hidden pages and dishes are dropped, held-back pages are dropped.
+// Stage-2 fields (PROTOTYPE.md: description, photos, films, backgroundFilm,
+// slides) are emitted only when set, so a stage-1 bundle is byte-for-byte
+// what it was.
 
-const PAGE_KEYS = ['id', 'type', 'title', 'subtitle', 'kicker', 'image', 'body', 'facts', 'hours', 'qr', 'children', 'sections', 'images', 'items'];
+const PAGE_KEYS = ['id', 'type', 'title', 'subtitle', 'kicker', 'image', 'body', 'facts', 'hours', 'qr', 'children', 'sections', 'images', 'items',
+  'description', 'photos', 'films', 'backgroundFilm', 'slides'];
 const HOTEL_KEYS = ['name', 'tagline', 'reception', 'roomService', 'wifiName', 'wifiPassword', 'checkout'];
+
+/** Which page types may carry each stage-2 field (PROTOTYPE.md 2a–2c). Anything else is left out of the bundle. */
+export const ALLOWS = {
+  photos: ['info', 'hub', 'list', 'contact'],
+  films: ['info', 'hub', 'list', 'contact', 'menu'],
+  backgroundFilm: ['info', 'hub', 'list', 'contact', 'menu'],
+  slides: ['finished'],
+  description: ['finished'],
+};
+const allows = (key, type) => ALLOWS[key].includes(type);
 
 const present = (v) => !(v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0));
 const str = (v) => (present(v) ? String(v) : undefined);
@@ -43,6 +57,41 @@ function cleanItems(items) {
   });
 }
 
+function cleanPhotos(photos) {
+  return (photos || []).filter((p) => present(p.image)).map((p) => {
+    const out = { image: p.image, fit: p.fit === 'whole' ? 'whole' : 'fill' };
+    if (present(p.caption)) out.caption = p.caption;
+    return out;
+  });
+}
+
+function cleanFilms(films) {
+  return (films || []).filter((f) => present(f.film)).map((f) => {
+    const out = { film: f.film };
+    if (present(f.poster)) out.poster = f.poster;
+    if (present(f.title)) out.title = f.title;
+    if (Number.isFinite(f.seconds) && f.seconds > 0) out.seconds = Math.round(f.seconds);
+    return out;
+  });
+}
+
+function cleanBackgroundFilm(bg) {
+  if (!bg || !present(bg.film)) return undefined;
+  const out = { film: bg.film };
+  if (present(bg.poster)) out.poster = bg.poster;
+  return out;
+}
+
+// Slides reference the file the editor chose: media/<hash>-3840.jpg when the
+// upload was 4K (PROTOTYPE.md 2b), else -1920.jpg. The path is kept as is.
+function cleanSlides(slides) {
+  return (slides || []).map((s) => {
+    if (present(s.film)) { const out = { film: s.film }; if (present(s.poster)) out.poster = s.poster; return out; }
+    if (present(s.image)) return { image: s.image };
+    return null;
+  }).filter(Boolean);
+}
+
 /** One page in bundle shape, or null if it must be left out. */
 export function cleanPage(page, held = null) {
   if (page.hidden) return null;
@@ -62,6 +111,11 @@ export function cleanPage(page, held = null) {
     sections: page.type === 'menu' || present(page.sections) ? cleanSections(page.sections) : undefined,
     images: (page.images || []).filter(present),
     items: page.type === 'list' || present(page.items) ? cleanItems(page.items) : undefined,
+    description: allows('description', page.type) ? str(page.description) : undefined,
+    photos: allows('photos', page.type) ? cleanPhotos(page.photos) : undefined,
+    films: allows('films', page.type) ? cleanFilms(page.films) : undefined,
+    backgroundFilm: allows('backgroundFilm', page.type) ? cleanBackgroundFilm(page.backgroundFilm) : undefined,
+    slides: allows('slides', page.type) ? cleanSlides(page.slides) : undefined,
   };
   const out = {};
   for (const k of PAGE_KEYS) if (present(raw[k])) out[k] = raw[k];
@@ -120,6 +174,11 @@ export function buildBundle(doc, { revision, held, published } = {}) {
   const home = build({ ...doc.home, hidden: false });
   const bundle = { version: revision ?? doc.version ?? 1, hotel, home };
   return { bundle, heldBack, frozen };
+}
+
+/** Every media/ path a bundle refers to (photos and films), deduplicated. */
+export function mediaPathsIn(bundle) {
+  return [...new Set(JSON.stringify(bundle).match(/media\/[0-9a-f]{12}-\d+\.(?:jpg|mp4)/g) || [])];
 }
 
 /** Pretty JSON, 2-space, trailing newline, as seed.py writes it. */

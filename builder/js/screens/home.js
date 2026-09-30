@@ -194,7 +194,7 @@ export function mount(host, app, params) {
     let type = isHome ? 'hub' : 'info';
     let title = '';
     const tpl = el('div.tpl');
-    const types = isHome ? ['hub', 'info', 'menu', 'gallery', 'list', 'contact'] : ['info', 'menu', 'gallery', 'list'];
+    const types = isHome ? ['hub', 'info', 'menu', 'gallery', 'list', 'contact', 'finished'] : ['info', 'menu', 'gallery', 'list', 'finished'];
     const buttons = types.map((t) => el('button', { type: 'button', class: t === type ? 'on' : '', onclick: () => { type = t; buttons.forEach((b) => b.classList.toggle('on', b.dataset.t === t)); }, dataset: { t } }, el('b', PAGE_TYPES[t].label), el('span', PAGE_TYPES[t].hint)));
     tpl.append(...buttons);
     const siblings = (parent.children || []).map((c) => (c.title || '').trim().toLowerCase());
@@ -216,7 +216,7 @@ export function mount(host, app, params) {
         model.commit(`Add ${t}`, (d) => addPage(d, parentId, page), { origin: 'home' });
         select(page.id);
         setTimeout(() => refocus(page.id), 0);
-        toast(`Added ${t}. It needs a photo before it can be published.`, { action: 'Edit page', onAction: () => app.go('editor', { page: page.id }) });
+        toast(type === 'finished' ? `Added ${t}. Upload its artwork, give it a description and a strip photo, then publish.` : `Added ${t}. It needs a photo before it can be published.`, { action: 'Edit page', onAction: () => app.go('editor', { page: page.id }) });
         return true;
       } }],
     });

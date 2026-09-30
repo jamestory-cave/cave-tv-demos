@@ -5,7 +5,7 @@ import { el } from '../util.js';
 import { model } from '../model.js';
 import { modal, textField, uid, toast } from '../ui.js';
 
-const SCREEN_NAMES = { home: 'Home', editor: 'Page editor', menus: 'Menus', media: 'Media', hotel: 'Hotel details', publish: 'Publish', settings: 'Settings' };
+const SCREEN_NAMES = { home: 'Home', editor: 'Page editor', menus: 'Menus', media: 'Media', hotel: 'Hotel details', publish: 'Publish', settings: 'Settings', guide: 'Guide for the visual team' };
 
 export function feedbackModal(app) {
   let comment = '';
