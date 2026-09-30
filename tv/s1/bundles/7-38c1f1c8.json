@@ -1,0 +1,719 @@
+{
+  "version": 7,
+  "hotel": {
+    "name": "Cave Hotels",
+    "tagline": "A hotel like no other awaits",
+    "reception": "Dial 0",
+    "roomService": "Dial 1",
+    "wifiName": "Cave Hotel Guest",
+    "wifiPassword": "",
+    "checkout": "11:00am"
+  },
+  "home": {
+    "id": "home",
+    "type": "home",
+    "title": "Cave Hotels",
+    "subtitle": "Welcome to the inner sanctum",
+    "kicker": "A hotel like no other awaits",
+    "image": "hero-home",
+    "children": [
+      {
+        "id": "room",
+        "type": "info",
+        "title": "Your Room",
+        "subtitle": "Everything you need to settle in",
+        "kicker": "In your room",
+        "image": "penthouse-5",
+        "body": "Every detail has been applied to the highest specification to immerse you in total luxury. Dark, warm tones; American walnut panelling; Lutron scene lighting. Press the scene buttons by the door to set the mood.",
+        "facts": [
+          "Super king size bed with cotton robes in the wardrobe",
+          "Scene lighting — Relax, Bright, Night and Off by the bedside",
+          "Rainfall shower and complimentary Alchemist toiletries",
+          "Coffee machine and complimentary refreshments — replenished daily",
+          "AirPlay: your Apple TV is ready to stream from your phone",
+          "Housekeeping between 10am and 2pm — hang the sign to skip"
+        ],
+        "hours": [
+          {
+            "label": "Check-out",
+            "value": "11:00am"
+          },
+          {
+            "label": "Breakfast",
+            "value": "7:00 – 10:30am"
+          },
+          {
+            "label": "Pool & gym",
+            "value": "7:00am – 9:00pm"
+          }
+        ],
+        "qr": {
+          "label": "Join the guest Wi-Fi",
+          "url": "WIFI:T:nopass;S:Cave Hotel Guest;;"
+        },
+        "children": [
+          {
+            "id": "suites",
+            "type": "gallery",
+            "title": "Our Suites",
+            "kicker": "Rooms & suites",
+            "image": "hero-suite",
+            "images": [
+              "hero-suite",
+              "hero-room",
+              "penthouse-3"
+            ]
+          },
+          {
+            "id": "penthouse",
+            "type": "gallery",
+            "title": "The Penthouse",
+            "kicker": "2,700 sq ft",
+            "image": "hero-penthouse",
+            "children": [
+              {
+                "id": "savant-s45a3",
+                "type": "info",
+                "title": "Savant",
+                "subtitle": "One line that sums it up",
+                "kicker": "Room Automation",
+                "body": "The penthouse is controlled with the Savant system, it will allow you to control the TV and audio via the interactive remote control or the provided iPad.",
+                "facts": [
+                  "One thing worth knowing  - it crashes all the time",
+                  "this is the first page we have made"
+                ],
+                "backgroundFilm": {
+                  "film": "media/5831ccf3afac-1080.mp4",
+                  "poster": "media/081249737b96-1920.jpg"
+                }
+              }
+            ],
+            "images": [
+              "hero-penthouse",
+              "penthouse-2",
+              "penthouse-3",
+              "penthouse-4",
+              "penthouse-5",
+              "penthouse-6"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "eat",
+        "type": "hub",
+        "title": "Eat & Drink",
+        "subtitle": "Four ways to eat at Cave",
+        "kicker": "Restaurants & bars",
+        "image": "hero-eat",
+        "children": [
+          {
+            "id": "firepit",
+            "type": "info",
+            "title": "The Firepit",
+            "subtitle": "Wood-smoked sharing plates",
+            "kicker": "AA 2 Rosettes",
+            "image": "hero-firepit",
+            "body": "The Firepit is a modern culinary adventure centred around sharing plates. Group Executive Chef John Bingley's indulgent menu brings together the smoky, barbecue aromas of the American West with the delicately spiced tastes of the Far East.",
+            "facts": [
+              "Sharing plates cooked over open flame",
+              "Tasting menu available Thursday to Saturday",
+              "Sunday roast from 12pm",
+              "Private dining room for up to 14"
+            ],
+            "hours": [
+              {
+                "label": "Dinner",
+                "value": "Wed – Sat, 6:00 – 9:30pm"
+              },
+              {
+                "label": "Sunday lunch",
+                "value": "12:00 – 4:00pm"
+              }
+            ],
+            "qr": {
+              "label": "Book a table at the Firepit",
+              "url": "https://www.cavehotels.com/book-a-table/"
+            },
+            "children": [
+              {
+                "id": "firepit-menu",
+                "type": "menu",
+                "title": "Firepit Menu",
+                "kicker": "Sample menu",
+                "image": "firepit-2",
+                "body": "Dishes are designed for sharing — we suggest three or four plates between two.",
+                "qr": {
+                  "label": "See the full menu and wine list on your phone",
+                  "url": "https://www.cavehotels.com/firepit-restaurant/"
+                },
+                "sections": [
+                  {
+                    "title": "Small plates",
+                    "items": [
+                      {
+                        "name": "Smoked bone marrow",
+                        "description": "Parsley salad, sourdough toast",
+                        "price": "£12"
+                      },
+                      {
+                        "name": "Korean fried chicken",
+                        "description": "Gochujang glaze, sesame, spring onion",
+                        "price": "£11",
+                        "tags": [
+                          "gf"
+                        ]
+                      },
+                      {
+                        "name": "Burnt leek",
+                        "description": "Romesco, hazelnut, chive oil",
+                        "price": "£9",
+                        "tags": [
+                          "vg"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "title": "From the fire",
+                    "note": "cooked over English oak",
+                    "items": [
+                      {
+                        "name": "Beef short rib",
+                        "description": "16-hour smoked, bourbon glaze, pickled shallot",
+                        "price": "£28"
+                      },
+                      {
+                        "name": "Whole sea bream",
+                        "description": "Yuzu, chilli, coriander, charred lime",
+                        "price": "£26",
+                        "tags": [
+                          "gf"
+                        ]
+                      },
+                      {
+                        "name": "Chateaubriand for two",
+                        "description": "Bone marrow butter, triple-cooked chips",
+                        "price": "£85"
+                      }
+                    ]
+                  },
+                  {
+                    "title": "Sides",
+                    "items": [
+                      {
+                        "name": "Triple-cooked chips",
+                        "price": "£6",
+                        "tags": [
+                          "v"
+                        ]
+                      },
+                      {
+                        "name": "Kimchi slaw",
+                        "price": "£5",
+                        "tags": [
+                          "vg"
+                        ]
+                      },
+                      {
+                        "name": "Charred hispi cabbage",
+                        "description": "Miso butter",
+                        "price": "£6",
+                        "tags": [
+                          "v"
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "cowgirl",
+            "type": "info",
+            "title": "The Korean Cowgirl",
+            "subtitle": "Texas meets Seoul",
+            "kicker": "Restaurant & lounge",
+            "image": "hero-cowgirl",
+            "body": "Our Korean Cowgirl restaurant provides a unique blend of Texas and Asian culture and cuisine. Sip on signature cocktails in the Cowgirl Lounge — atmospheric mood lighting, modern interiors, the perfect date night destination.",
+            "facts": [
+              "Smoked brisket, burnt ends and Korean fried chicken",
+              "Signature cocktails until late",
+              "Live DJ on Friday and Saturday nights"
+            ],
+            "hours": [
+              {
+                "label": "Kitchen",
+                "value": "12:00 – 9:30pm daily"
+              },
+              {
+                "label": "Lounge bar",
+                "value": "Until 1:00am Fri & Sat"
+              }
+            ],
+            "qr": {
+              "label": "Reserve a table at Korean Cowgirl",
+              "url": "https://www.cavehotels.com/book-a-table/"
+            },
+            "children": [
+              {
+                "id": "the-korean-cowgirl-menu-pfxdd",
+                "type": "menu",
+                "title": "The Korean Cowgirl Menu",
+                "kicker": "Sample menu",
+                "body": "One line about the menu.",
+                "sections": [
+                  {
+                    "title": "Lite Bites",
+                    "items": [
+                      {
+                        "name": "BLOOMING ONION",
+                        "description": "creamy pepper mayo ",
+                        "price": "10"
+                      },
+                      {
+                        "name": "KOREAN FRIED CAULIFLOWER",
+                        "description": "pineapple + gochujang sauce",
+                        "price": "11"
+                      },
+                      {
+                        "name": "CRACKERJACK PRAWNS ",
+                        "description": "lettuce wrap, sriracha dressing",
+                        "price": "14"
+                      },
+                      {
+                        "name": "GYOZAS",
+                        "description": "pork, chicken or veg",
+                        "price": "11"
+                      }
+                    ]
+                  },
+                  {
+                    "title": "Cowgirl Meat",
+                    "note": "Enjoy your favourite cowgirl meat",
+                    "items": [
+                      {
+                        "name": "CHERRY BABY BACK RIBS ",
+                        "description": "1/2 RACK | FULL RACK  ",
+                        "price": "17/27"
+                      },
+                      {
+                        "name": "MARINATED FLAT IRON STEAK ",
+                        "description": "cowgirl butter sauce",
+                        "price": "25"
+                      },
+                      {
+                        "name": "SLICED CREEKSTONE USDA SMOKED BRISKET",
+                        "price": "35"
+                      },
+                      {
+                        "name": "TEXAS STYLE SMOKED  TURKEY ",
+                        "price": "20"
+                      },
+                      {
+                        "name": "PULLED PORK ",
+                        "price": "27"
+                      }
+                    ]
+                  },
+                  {
+                    "title": "Smokehouse BBQ Boards",
+                    "note": " enjoy a selection of our favourite meats all on one board",
+                    "items": [
+                      {
+                        "name": "MINI (1 person)",
+                        "price": "38"
+                      },
+                      {
+                        "name": "DIRTY (2 persons)",
+                        "price": "75"
+                      },
+                      {
+                        "name": "LUDICROUS (4 persons)",
+                        "price": "130"
+                      }
+                    ]
+                  },
+                  {
+                    "title": "Korean Fried Chicken",
+                    "items": [
+                      {
+                        "name": "6 x KOREAN FRIED WINGS",
+                        "description": "yang nyum  |  honey butter  |  soy + garlic  |  BBQ cheeseburger  |  buffalo & blue cheese",
+                        "price": "10"
+                      },
+                      {
+                        "name": "6 x SOUTHERN FRIED BONELESS",
+                        "description": "yang nyum  |  honey butter  |  soy + garlic  |  BBQ cheeseburger  |  buffalo & blue cheese",
+                        "price": "11"
+                      },
+                      {
+                        "name": "SOUTHERN FRIED CHICKEN TENDERS",
+                        "description": "OG sauce",
+                        "price": "12"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "deck",
+            "type": "info",
+            "title": "The Deck",
+            "subtitle": "Lunch and dinner in the open air",
+            "kicker": "Al fresco",
+            "image": "hero-deck",
+            "body": "Our dining on the deck is the perfect spot to while away an afternoon. Join us for a spot of lunch or dinner and indulge in Korean Cowgirl dishes and mouth-watering cocktails with views over the golf course.",
+            "hours": [
+              {
+                "label": "Open",
+                "value": "12:00 – 9:00pm, weather permitting"
+              }
+            ]
+          },
+          {
+            "id": "breakfast",
+            "type": "menu",
+            "title": "Breakfast",
+            "kicker": "AA Breakfast Award",
+            "image": "hero-breakfast",
+            "body": "Served in the Firepit. Continental buffet included; cooked dishes to order.",
+            "hours": [
+              {
+                "label": "Weekdays",
+                "value": "7:00 – 10:00am"
+              },
+              {
+                "label": "Weekends",
+                "value": "7:30 – 10:30am"
+              }
+            ],
+            "sections": [
+              {
+                "title": "To order",
+                "items": [
+                  {
+                    "name": "The Cave full English",
+                    "description": "Cumberland sausage, smoked bacon, black pudding, eggs your way",
+                    "price": "included"
+                  },
+                  {
+                    "name": "Smoked salmon & scrambled eggs",
+                    "description": "Toasted sourdough, chive",
+                    "price": "included"
+                  },
+                  {
+                    "name": "Shakshuka",
+                    "description": "Baked eggs, spiced tomato, feta, flatbread",
+                    "price": "included",
+                    "tags": [
+                      "v"
+                    ]
+                  },
+                  {
+                    "name": "Breakfast brioche",
+                    "description": "Bacon, fried egg, hash brown, chipotle mayo",
+                    "price": "included"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "roomservice",
+            "type": "menu",
+            "title": "Room Service",
+            "kicker": "In-room dining",
+            "image": "hero-roomservice",
+            "body": "Dial 1 from your room phone to order. A £5 tray charge applies. Ordering from your TV is coming soon.",
+            "qr": {
+              "label": "Order on your phone",
+              "url": "https://www.cavehotels.com/"
+            },
+            "sections": [
+              {
+                "title": "All day",
+                "note": "12pm – 10pm",
+                "items": [
+                  {
+                    "name": "Cave burger",
+                    "description": "Smoked brisket patty, American cheese, pickles, fries",
+                    "price": "£18"
+                  },
+                  {
+                    "name": "Korean fried chicken box",
+                    "description": "Kimchi slaw, gochujang mayo",
+                    "price": "£16"
+                  },
+                  {
+                    "name": "Club sandwich",
+                    "description": "Chicken, bacon, egg, fries",
+                    "price": "£15"
+                  },
+                  {
+                    "name": "Caesar salad",
+                    "description": "Add chicken £4",
+                    "price": "£12"
+                  }
+                ]
+              },
+              {
+                "title": "Late night",
+                "note": "10pm – 6am",
+                "items": [
+                  {
+                    "name": "Cheese & charcuterie board",
+                    "price": "£16"
+                  },
+                  {
+                    "name": "Toastie",
+                    "description": "Cheddar and ham, or cheddar and kimchi",
+                    "price": "£9",
+                    "tags": [
+                      "v"
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "spa",
+        "type": "info",
+        "title": "Pool, Gym & Treatments",
+        "subtitle": "Hydrotherapy, sauna, gym",
+        "kicker": "Relax",
+        "image": "hero-pool",
+        "body": "Immerse yourself in our relaxing saline hydrotherapy pool or recline on a nearby lounger. Our twelve-seater jacuzzi enjoys panoramic views over Boughton Golf Club. The gym is set up for general fitness rather than gym bunnies — a curved treadmill, exercise bike, water rower and NOHrD gym wall.",
+        "facts": [
+          "Robes and slippers are in your wardrobe",
+          "Towels are provided poolside",
+          "Children welcome 9am – 5pm",
+          "Treatments bookable at reception"
+        ],
+        "hours": [
+          {
+            "label": "Pool & jacuzzi",
+            "value": "7:00am – 9:00pm"
+          },
+          {
+            "label": "Gym",
+            "value": "6:00am – 10:00pm"
+          },
+          {
+            "label": "Treatments",
+            "value": "10:00am – 6:00pm"
+          }
+        ],
+        "qr": {
+          "label": "See treatments and prices",
+          "url": "https://www.cavehotels.com/pool-gym-and-treatments/"
+        },
+        "children": [
+          {
+            "id": "gym",
+            "type": "gallery",
+            "title": "The Gym",
+            "kicker": "Fitness",
+            "image": "hero-gym",
+            "images": [
+              "hero-gym",
+              "hero-pool"
+            ]
+          },
+          {
+            "id": "therapy-pool-cvts8",
+            "type": "info",
+            "title": "Therapy Pool",
+            "kicker": "Pop on your robe and enjoy!",
+            "image": "hero-pool",
+            "body": "Hot pools differs from swimming pools simply because they are super heated this means you can indulge in the warmth whilst benefiting from health benefits . The water temperature is usually 33–36ºC. But never mind the health benefits, here at Cave our pool is set up for maximum enjoyment, so whether you are looking to relieve the aches and strains, or simply a relaxation session our combination of pools fits the bill. The pool is exclusively for hotel guests to enjoy.",
+            "facts": [
+              "Sauna ",
+              "Steam room"
+            ],
+            "hours": [
+              {
+                "label": "Open",
+                "value": "6:00am – 12:00am"
+              },
+              {
+                "label": "Closed between",
+                "value": "13:00pm - 14:00pm"
+              }
+            ],
+            "backgroundFilm": {
+              "film": "media/be375ac3a2da-1080.mp4",
+              "poster": "media/74b22d4dd7dd-1920.jpg"
+            }
+          },
+          {
+            "id": "in-room-treatments-a4arw",
+            "type": "info",
+            "title": "In Room Treatments",
+            "subtitle": "One line that sums it up",
+            "kicker": "A short line above the title",
+            "image": "media/011562648e8e-1920.jpg",
+            "body": "Relax and unwind in the comfort of your own bedroom! Here at Cave, we provide a fully qualified Reflexologist and Massage Therapist with over 20 years’ experience. Your preferences will be established before treatments commence allowing your treatment to be entirely bespoke to you and your needs.\n\nWhen you book your treatments, please have your reservation confirmation number to hand. Please message Sarah on 07939 208662 to answer your queries and make a booking.",
+            "facts": [
+              "One thing worth knowing",
+              "Another"
+            ],
+            "hours": [
+              {
+                "label": "Open",
+                "value": "9:00am – 5:00pm"
+              }
+            ]
+          }
+        ],
+        "backgroundFilm": {
+          "film": "media/be375ac3a2da-1080.mp4",
+          "poster": "media/ead967ac0a46-1920.jpg"
+        }
+      },
+      {
+        "id": "golf",
+        "type": "info",
+        "title": "Golf",
+        "subtitle": "Play while you stay",
+        "kicker": "Boughton Golf Club",
+        "image": "hero-golf",
+        "body": "Set in the picturesque Kent countryside, our 6,591-yard course comprises four par 3s, ten par 4s and four par 5s arranged in two loops of nine holes, starting and finishing close to our traditional Kentish clubhouse. Covered driving range, putting green and short-game practice area.",
+        "facts": [
+          "Hotel guests receive 20% off green fees",
+          "Club hire and buggies available",
+          "PGA coaching by the hour",
+          "Driving range open until dusk"
+        ],
+        "hours": [
+          {
+            "label": "First tee",
+            "value": "7:30am"
+          },
+          {
+            "label": "Pro shop",
+            "value": "7:00am – 7:00pm"
+          }
+        ],
+        "qr": {
+          "label": "Book a tee time",
+          "url": "https://www.cavehotels.com/book-golf/"
+        },
+        "children": [
+          {
+            "id": "golf-gallery",
+            "type": "gallery",
+            "title": "The Course",
+            "kicker": "18 holes",
+            "image": "golf-2",
+            "images": [
+              "golf-2",
+              "hero-golf",
+              "hero-explore"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "whatson",
+        "type": "list",
+        "title": "What's On",
+        "subtitle": "This month at Cave",
+        "kicker": "Events & offers",
+        "image": "hero-events",
+        "items": [
+          {
+            "title": "Oktoberfest at Cave",
+            "subtitle": "Steins, bratwurst and live oompah",
+            "body": "Our biggest party of the autumn on the Deck. Tickets include a stein and a plate.",
+            "image": "deck-evening",
+            "meta": "Sat 4 Oct"
+          },
+          {
+            "title": "Firepit Tasting Menu",
+            "subtitle": "Seven courses, £75",
+            "body": "Chef John Bingley's seasonal tasting menu with optional wine pairing.",
+            "image": "hero-firepit",
+            "meta": "Thu – Sat"
+          },
+          {
+            "title": "Festive Afternoon Tea",
+            "subtitle": "£32 per person",
+            "body": "Mulled wine, mince pies and festive fancies in the Cowgirl Lounge.",
+            "image": "hero-cowgirl",
+            "meta": "From 24 Nov"
+          },
+          {
+            "title": "Dinner, Bed & Breakfast offer",
+            "subtitle": "Save 15%",
+            "body": "Book your next Cave escape direct and dinner is on us.",
+            "image": "hero-suite",
+            "meta": "Midweek"
+          }
+        ]
+      },
+      {
+        "id": "explore",
+        "type": "list",
+        "title": "Explore Kent",
+        "subtitle": "Where to go from Boughton",
+        "kicker": "Around us",
+        "image": "hero-explore",
+        "items": [
+          {
+            "title": "Canterbury Cathedral",
+            "subtitle": "UNESCO World Heritage Site",
+            "body": "The mother church of the Anglican Communion, 1,400 years old. Evensong at 5:30pm is free and beautiful.",
+            "image": "hero-hotel",
+            "meta": "15 min drive"
+          },
+          {
+            "title": "Whitstable",
+            "subtitle": "Oysters and the seafront",
+            "body": "Wheelers Oyster Bar, the harbour, and a sunset from the Old Neptune.",
+            "image": "hero-explore",
+            "meta": "20 min drive"
+          },
+          {
+            "title": "Faversham",
+            "subtitle": "Market town and Shepherd Neame",
+            "body": "Britain's oldest brewer runs tours daily. Market on Tuesdays, Fridays and Saturdays.",
+            "image": "hero-hotel",
+            "meta": "10 min drive"
+          },
+          {
+            "title": "Cave Landjet & car hire",
+            "subtitle": "Door-to-door",
+            "body": "Our Mercedes V-Class can take you anywhere in Kent. Car hire delivered to the hotel.",
+            "image": "hero-hotel",
+            "meta": "Ask reception"
+          }
+        ]
+      },
+      {
+        "id": "contact",
+        "type": "contact",
+        "title": "Contact & Help",
+        "subtitle": "Reception is staffed 24 hours",
+        "kicker": "We're here",
+        "image": "hero-hotel",
+        "body": "Cave Hotel & Golf Resort, Brickfield Lane, Boughton-under-Blean, Canterbury, Kent ME13 9AJ",
+        "facts": [
+          "Accessibility guide available at reception",
+          "Late check-out until 1pm, subject to availability",
+          "In an emergency dial 999, then 0 for reception"
+        ],
+        "qr": {
+          "label": "Join The Tribe — offers and first dibs on events",
+          "url": "https://www.cavehotels.com/#tribe"
+        }
+      }
+    ]
+  }
+}
