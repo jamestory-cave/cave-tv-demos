@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Cave Builder self-test</title>
+<link rel="stylesheet" href="css/builder.css">
+<style>
+  main { max-width: 960px; margin: 0 auto; padding: 24px; }
+  .t { display: flex; gap: 10px; padding: 8px 10px; border-bottom: 1px solid var(--line-2); align-items: flex-start; }
+  .t .ok { color: var(--green); font-weight: 700; width: 46px; flex: none; }
+  .t .fail { color: var(--red); font-weight: 700; width: 46px; flex: none; }
+  pre { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 10px; font-size: 12px; overflow: auto; white-space: pre-wrap; }
+  #summary { font-size: 18px; font-weight: 700; margin: 12px 0; }
+  #qr { display: inline-block; background: #fff; padding: 20px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Cave Builder self-test</h1>
+  <p class="muted">Loads the published bundle, runs it through the editor model and the bundle generator, and checks the output equals the input (ignoring key order and whitespace). Then exercises the change list, hiding, delete and undo, and the publish call sequence against a fake GitHub.</p>
+  <div id="summary">Running…</div>
+  <div id="results"></div>
+  <h2 style="margin-top:24px">Publish call sequence (fake transport)</h2>
+  <pre id="calls"></pre>
+  <h2>QR check</h2>
+  <p class="muted small">Encodes <code id="qrtext"></code>. Scan it with a phone, or run <code>builder/tools/qr-check.swift</code> on a screenshot.</p>
+  <div id="qr"></div>
+</main>
+<script>
+window.addEventListener('error', (e) => { const d = document.createElement('div'); d.className = 't'; d.textContent = 'ERROR ' + e.message + ' ' + (e.filename || '').split('/').pop() + ':' + e.lineno; document.getElementById('results').append(d); document.getElementById('summary').textContent = 'Error'; });
+</script>
+<script type="module">
+import { config } from './config.js';
+import { canonical, clone } from './js/util.js';
+import { model, movePage, removePage, addPage, findIn } from './js/model.js';
+import { buildBundle, bundleText } from './js/bundle.js';
+import { describeChanges } from './js/changes.js';
+import { validateAll } from './js/validate.js';
+import { GitHubStore } from './js/stores/github.js';
+import { encodeQR, qrSVG } from './js/preview/qr.js';
+
+const results = document.getElementById('results');
+let pass = 0, fail = 0;
+function check(name, ok, detail) {
+  const row = document.createElement('div');
+  row.className = 't';
+  const mark = document.createElement('span');
+  mark.className = ok ? 'ok' : 'fail';
+  mark.textContent = ok ? 'PASS' : 'FAIL';
+  const text = document.createElement('span');
+  text.textContent = name + (detail ? ` — ${detail}` : '');
+  row.append(mark, text);
+  results.append(row);
+  if (ok) pass++; else fail++;
+}
+
+async function run() {
+  // 1. Round trip.
+  const gh = new GitHubStore();
+  const published = await gh.loadPublished();
+  check('Loaded published content', !!published.bundle, `revision ${published.version.revision}, ${published.version.bundle}`);
+  model.load(published, null);
+  const held = validateAll(model.draft, { imageSize: () => null });
+  const heldIds = [...held].filter(([id, r]) => r.held).map(([id]) => id);
+  check('Seed content has no blockers', heldIds.length === 0, heldIds.join(', ') || 'none');
+  const { bundle } = buildBundle(model.draft, { revision: published.bundle.version, held });
+  const same = canonical(bundle) === canonical(published.bundle);
+  check('Model → bundle equals the published bundle (ignoring key order)', same);
+  if (!same) {
+    const pre = document.createElement('pre');
+    pre.textContent = 'Generated:\n' + bundleText(bundle).slice(0, 4000);
+    results.append(pre);
+  }
+  const reparsed = JSON.parse(bundleText(bundle));
+  check('Bundle text parses back to the same document', canonical(reparsed) === canonical(bundle));
+  check('No changes listed straight after loading', describeChanges(published.bundle, model.draft).entries.length === 0);
+
+  // 2. Change a price.
+  model.commit('price', (d) => { findIn(d, 'firepit-menu').page.sections[0].items[0].price = '£14'; });
+  let ch = describeChanges(published.bundle, model.draft);
+  check('Price change is listed in plain English', ch.summary.some((s) => /Firepit Menu: Smoked bone marrow: £12 → £14/.test(s)), ch.summary.join(' | '));
+
+  // 3. Reorder two sections.
+  model.commit('reorder', (d) => movePage(d, 'home', 0, 1));
+  ch = describeChanges(published.bundle, model.draft);
+  check('Reordering sections is listed', ch.summary.some((s) => /^Home: Order is now: Eat & Drink, Your Room/.test(s)), ch.summary.find((s) => s.startsWith('Home:')) || 'not found');
+
+  // 4. Hide The Deck.
+  model.commit('hide', (d) => { findIn(d, 'deck').page.hidden = true; });
+  ch = describeChanges(published.bundle, model.draft);
+  check('Hiding The Deck is listed', ch.summary.some((s) => /The Deck: Hidden from guests/.test(s)));
+  const b2 = buildBundle(model.draft, { revision: 2, held: validateAll(model.draft) }).bundle;
+  const eat = b2.home.children.find((p) => p.id === 'eat');
+  check('Generated bundle omits the hidden page', !eat.children.some((p) => p.id === 'deck') && !JSON.stringify(b2).includes('"hidden"'));
+  check('Bundle version carries the revision', b2.version === 2);
+
+  // 5. Delete then undo.
+  let removed = null;
+  model.commit('delete', (d) => { removed = removePage(d, 'cowgirl'); });
+  check('Deleted page is gone', !findIn(model.draft, 'cowgirl'));
+  model.commit('restore', (d) => addPage(d, removed.parentId, removed.page, removed.index), { undoable: false });
+  const back = findIn(model.draft, 'cowgirl');
+  check('Undo puts it back in the same place', back && back.parent.children.indexOf(back.page) === removed.index);
+  const before = clone(model.draft);
+  model.commit('title', (d) => { findIn(d, 'golf').page.title = 'Golf!'; });
+  model.undo();
+  check('Undo stack restores the previous document', canonical(model.draft) === canonical(before));
+
+  // 6. Blocked page left out.
+  model.commit('break', (d) => { findIn(d, 'golf').page.title = ''; });
+  const v = validateAll(model.draft, { imageSize: () => null });
+  const b3 = buildBundle(model.draft, { revision: 3, held: v });
+  check('A page with no title is held back and left out of the bundle', v.get('golf').held && !b3.bundle.home.children.some((p) => p.id === 'golf') && b3.heldBack.some((h) => h.id === 'golf'));
+  const v2 = validateAll(model.draft, { imageSize: (src) => (src === 'hero-firepit' ? { width: 1280, height: 853 } : src === 'hero-pool' ? { width: 1282, height: 1920 } : null) });
+  check('A strip photo under 1920 px is a blocker; a portrait 1282 × 1920 is fine', v2.get('firepit').blockers.some((b) => b.field === 'image') && !v2.get('spa').blockers.some((b) => b.field === 'image'));
+  model.commit('badqr', (d) => { findIn(d, 'cowgirl').page.qr.url = 'not a url'; });
+  check('An invalid QR address is a blocker', validateAll(model.draft).get('cowgirl').blockers.some((b) => b.field === 'qr.url'));
+  model.undo();
+
+  // 7. Publish against a fake GitHub.
+  const calls = [];
+  const fakeVersion = btoa(JSON.stringify({ schema: 1, revision: published.version.revision, bundle: published.version.bundle }));
+  const fakeHistory = btoa(JSON.stringify(published.history || []));
+  const fake = async (method, url, body) => {
+    const path = url.replace(config.apiBase, '');
+    calls.push(`${method} ${path}${body ? '  ' + JSON.stringify(Object.keys(body)) : ''}`);
+    if (method === 'GET' && path.endsWith('/git/ref/heads/main')) return { object: { sha: 'aaaa1111' } };
+    if (method === 'GET' && path.includes('/git/commits/')) return { tree: { sha: 'tree0000' } };
+    if (method === 'GET' && path.includes('/contents/') && path.includes('version.json')) return { content: fakeVersion };
+    if (method === 'GET' && path.includes('/contents/') && path.includes('history.json')) return { content: fakeHistory };
+    if (method === 'POST' && path.endsWith('/git/blobs')) return { sha: 'blob' + calls.length };
+    if (method === 'POST' && path.endsWith('/git/trees')) { calls.push('   tree paths: ' + body.tree.map((t) => t.path).join(', ')); return { sha: 'tree1111' }; }
+    if (method === 'POST' && path.endsWith('/git/commits')) { calls.push('   parents: ' + body.parents.join(',') + ' message: ' + body.message.split('\n')[0]); return { sha: 'commit2222' }; }
+    if (method === 'PATCH' && path.endsWith('/git/refs/heads/main')) return { object: { sha: body.sha } };
+    throw Object.assign(new Error('unexpected ' + method + ' ' + path), { status: 500 });
+  };
+  const store = new GitHubStore({ transport: fake });
+  store.setToken('');
+  const png = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/jpeg' });
+  const r = await store.publish({
+    bundle: b2, basedOnRevision: published.version.revision, summary: ch.summary, by: 'Self-test', note: 'test',
+    media: [{ hash: 'abcdef123456', name: 'Test photo', width: 1920, height: 1080, bytes: 3, blobs: { 1920: png, 800: png } }], mediaIndex: published.mediaIndex,
+  });
+  document.getElementById('calls').textContent = calls.join('\n');
+  check('Publish makes one commit and updates the ref', r.revision === published.version.revision + 1 && calls.filter((c) => c.startsWith('POST') && c.includes('/git/commits')).length === 1 && calls[calls.length - 1].startsWith('PATCH'), `revision ${r.revision}, ${calls.length} calls`);
+  check('Publish writes bundle, version, history, media index and both photo sizes', calls.some((c) => c.includes('media/abcdef123456-1920.jpg') && c.includes('media/abcdef123456-800.jpg') && c.includes(r.bundlePath) && c.includes('version.json') && c.includes('history.json') && c.includes('media/index.json')));
+  check('Bundle path follows bundles/<revision>-<hash8>.json', /^bundles\/\d+-[0-9a-f]{8}\.json$/.test(r.bundlePath), r.bundlePath);
+  check('History entry has who, when and summary', r.historyEntry.by === 'Self-test' && Array.isArray(r.historyEntry.summary) && /Z$/.test(r.historyEntry.publishedAt));
+  let conflict = null;
+  try { await store.publish({ bundle: b2, basedOnRevision: published.version.revision - 1, summary: [], by: 'x' }); } catch (e) { conflict = e; }
+  check('Publishing on a stale revision is refused', conflict && conflict.constructor.name === 'PublishConflict', conflict?.message);
+
+  // 8. QR.
+  const text = 'https://www.cavehotels.com/book-a-table/';
+  const q = encodeQR(text);
+  document.getElementById('qrtext').textContent = text;
+  document.getElementById('qr').append(qrSVG(text, 300));
+  check('QR encodes and has finder patterns', q.size === 29 && q.modules[0][0] && q.modules[0][6] && !q.modules[0][7], `version ${q.version}, mask ${q.mask}`);
+
+  // Leave the browser as we found it: the self-test never saves a draft.
+  document.getElementById('summary').textContent = fail ? `${fail} failed, ${pass} passed` : `All ${pass} checks passed`;
+  document.getElementById('summary').style.color = fail ? 'var(--red)' : 'var(--green)';
+  window.selftestDone = { pass, fail };
+}
+run().catch((e) => { check('Self-test crashed', false, e.message); document.getElementById('summary').textContent = 'Crashed: ' + e.message; window.selftestDone = { pass, fail: fail + 1 }; });
+</script>
+</body>
+</html>

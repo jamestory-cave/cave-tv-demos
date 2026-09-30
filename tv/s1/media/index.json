@@ -1,0 +1,331 @@
+{
+  "assets": {
+    "cowgirl-food": "media/913a3f523bad-1920.jpg",
+    "deck-evening": "media/9001979af21e-1920.jpg",
+    "firepit-2": "media/450e80ec52d8-1920.jpg",
+    "golf-2": "media/2cff4de639ba-1920.jpg",
+    "hero-breakfast": "media/d58ec5870d01-1920.jpg",
+    "hero-cowgirl": "media/bcc24dc6e263-1920.jpg",
+    "hero-deck": "media/54c202851d35-1920.jpg",
+    "hero-eat": "media/a61947aae735-1920.jpg",
+    "hero-events": "media/e5f99309a2bc-1920.jpg",
+    "hero-explore": "media/6634669a3c42-1920.jpg",
+    "hero-firepit": "media/c399fe63d141-1920.jpg",
+    "hero-golf": "media/a25e3df10499-1920.jpg",
+    "hero-gym": "media/2e7e7b2ffd54-1920.jpg",
+    "hero-home": "media/043c5ff655d8-1920.jpg",
+    "hero-hotel": "media/dffb8172274a-1920.jpg",
+    "hero-penthouse": "media/58186a1601c5-1920.jpg",
+    "hero-pool": "media/4c9c90896c5f-1920.jpg",
+    "hero-room": "media/bc238b165342-1920.jpg",
+    "hero-roomservice": "media/9aa8545a3eb0-1920.jpg",
+    "hero-suite": "media/0058a163014e-1920.jpg",
+    "penthouse-2": "media/a2a939b1db1b-1920.jpg",
+    "penthouse-3": "media/776945fdedac-1920.jpg",
+    "penthouse-4": "media/fd98781aad40-1920.jpg",
+    "penthouse-5": "media/6a76473bae25-1920.jpg",
+    "penthouse-6": "media/f65f18ef0c4b-1920.jpg"
+  },
+  "media": {
+    "913a3f523bad": {
+      "name": "Cowgirl food",
+      "asset": "cowgirl-food",
+      "width": 1920,
+      "height": 1280,
+      "sizes": [
+        1920,
+        800
+      ],
+      "bytes": 646911,
+      "addedAt": "seed"
+    },
+    "9001979af21e": {
+      "name": "Oktoberfest at Cave",
+      "asset": "deck-evening",
+      "width": 1920,
+      "height": 1280,
+      "sizes": [
+        1920,
+        800
+      ],
+      "bytes": 653826,
+      "addedAt": "seed"
+    },
+    "450e80ec52d8": {
+      "name": "Firepit Menu",
+      "asset": "firepit-2",
+      "width": 1920,
+      "height": 1280,
+      "sizes": [
+        1920,
+        800
+      ],
+      "bytes": 451684,
+      "addedAt": "seed"
+    },
+    "2cff4de639ba": {
+      "name": "The Course",
+      "asset": "golf-2",
+      "width": 1920,
+      "height": 1282,
+      "sizes": [
+        1920,
+        800
+      ],
+      "bytes": 433924,
+      "addedAt": "seed"
+    },
+    "d58ec5870d01": {
+      "name": "Breakfast",
+      "asset": "hero-breakfast",
+      "width": 1920,
+      "height": 1280,
+      "sizes": [
+        1920,
+        800
+      ],
+      "bytes": 318971,
+      "addedAt": "seed"
+    },
+    "bcc24dc6e263": {
+      "name": "Korean Cowgirl",
+      "asset": "hero-cowgirl",
+      "width": 1920,
+      "height": 1280,
+      "sizes": [
+        1920,
+        800
+      ],
+      "bytes": 588621,
+      "addedAt": "seed"
+    },
+    "54c202851d35": {
+      "name": "The Deck",
+      "asset": "hero-deck",
+      "width": 1920,
+      "height": 1280,
+      "sizes": [
+        1920,
+        800
+      ],
+      "bytes": 550819,
+      "addedAt": "seed"
+    },
+    "a61947aae735": {
+      "name": "Eat & Drink",
+      "asset": "hero-eat",
+      "width": 1920,
+      "height": 1280,
+      "sizes": [
+        1920,
+        800
+      ],
+      "bytes": 336883,
+      "addedAt": "seed"
+    },
+    "e5f99309a2bc": {
+      "name": "What's On",
+      "asset": "hero-events",
+      "width": 1920,
+      "height": 1280,
+      "sizes": [
+        1920,
+        800
+      ],
+      "bytes": 449771,
+      "addedAt": "seed"
+    },
+    "6634669a3c42": {
+      "name": "The Course 3",
+      "asset": "hero-explore",
+      "width": 1280,
+      "height": 1920,
+      "sizes": [
+        1920,
+        800
+      ],
+      "bytes": 513319,
+      "addedAt": "seed"
+    },
+    "c399fe63d141": {
+      "name": "The Firepit",
+      "asset": "hero-firepit",
+      "width": 1920,
+      "height": 1280,
+      "sizes": [
+        1920,
+        800
+      ],
+      "bytes": 362261,
+      "addedAt": "seed"
+    },
+    "a25e3df10499": {
+      "name": "Golf",
+      "asset": "hero-golf",
+      "width": 1920,
+      "height": 1282,
+      "sizes": [
+        1920,
+        800
+      ],
+      "bytes": 433169,
+      "addedAt": "seed"
+    },
+    "2e7e7b2ffd54": {
+      "name": "The Gym",
+      "asset": "hero-gym",
+      "width": 1920,
+      "height": 1282,
+      "sizes": [
+        1920,
+        800
+      ],
+      "bytes": 616693,
+      "addedAt": "seed"
+    },
+    "043c5ff655d8": {
+      "name": "Cave Hotels",
+      "asset": "hero-home",
+      "width": 1920,
+      "height": 1280,
+      "sizes": [
+        1920,
+        800
+      ],
+      "bytes": 488229,
+      "addedAt": "seed"
+    },
+    "dffb8172274a": {
+      "name": "Canterbury Cathedral",
+      "asset": "hero-hotel",
+      "width": 1920,
+      "height": 1282,
+      "sizes": [
+        1920,
+        800
+      ],
+      "bytes": 523414,
+      "addedAt": "seed"
+    },
+    "58186a1601c5": {
+      "name": "The Penthouse",
+      "asset": "hero-penthouse",
+      "width": 1920,
+      "height": 1280,
+      "sizes": [
+        1920,
+        800
+      ],
+      "bytes": 516644,
+      "addedAt": "seed"
+    },
+    "4c9c90896c5f": {
+      "name": "Pool, Gym & Treatments",
+      "asset": "hero-pool",
+      "width": 1282,
+      "height": 1920,
+      "sizes": [
+        1920,
+        800
+      ],
+      "bytes": 756530,
+      "addedAt": "seed"
+    },
+    "bc238b165342": {
+      "name": "Your Room",
+      "asset": "hero-room",
+      "width": 1920,
+      "height": 1280,
+      "sizes": [
+        1920,
+        800
+      ],
+      "bytes": 316266,
+      "addedAt": "seed"
+    },
+    "9aa8545a3eb0": {
+      "name": "Room Service",
+      "asset": "hero-roomservice",
+      "width": 1920,
+      "height": 1280,
+      "sizes": [
+        1920,
+        800
+      ],
+      "bytes": 266415,
+      "addedAt": "seed"
+    },
+    "0058a163014e": {
+      "name": "Our Suites",
+      "asset": "hero-suite",
+      "width": 1920,
+      "height": 1280,
+      "sizes": [
+        1920,
+        800
+      ],
+      "bytes": 307752,
+      "addedAt": "seed"
+    },
+    "a2a939b1db1b": {
+      "name": "The Penthouse 2",
+      "asset": "penthouse-2",
+      "width": 1920,
+      "height": 1280,
+      "sizes": [
+        1920,
+        800
+      ],
+      "bytes": 474508,
+      "addedAt": "seed"
+    },
+    "776945fdedac": {
+      "name": "Our Suites 3",
+      "asset": "penthouse-3",
+      "width": 1920,
+      "height": 1280,
+      "sizes": [
+        1920,
+        800
+      ],
+      "bytes": 314380,
+      "addedAt": "seed"
+    },
+    "fd98781aad40": {
+      "name": "The Penthouse 4",
+      "asset": "penthouse-4",
+      "width": 1920,
+      "height": 1280,
+      "sizes": [
+        1920,
+        800
+      ],
+      "bytes": 428661,
+      "addedAt": "seed"
+    },
+    "6a76473bae25": {
+      "name": "The Penthouse 5",
+      "asset": "penthouse-5",
+      "width": 1920,
+      "height": 1280,
+      "sizes": [
+        1920,
+        800
+      ],
+      "bytes": 383859,
+      "addedAt": "seed"
+    },
+    "f65f18ef0c4b": {
+      "name": "The Penthouse 6",
+      "asset": "penthouse-6",
+      "width": 1920,
+      "height": 1280,
+      "sizes": [
+        1920,
+        800
+      ],
+      "bytes": 429251,
+      "addedAt": "seed"
+    }
+  }
+}

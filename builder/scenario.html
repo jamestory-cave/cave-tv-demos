@@ -1,0 +1,44 @@
+<!doctype html>
+<!-- Developer harness, not for staff. Loads the Builder, applies scripted changes and opens a screen or modal, e.g.
+     scenario.html?s=changes,nodbg&go=publish      price change, reorder, hide, hours, hotel, blank title, delete + restore, then Publish
+     scenario.html?s=feedback&go=home              open the Feedback modal        s=pick: photo picker   s=addsection   s=delete
+     Nothing here touches GitHub. -->
+<html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="css/builder.css"><link rel="stylesheet" href="css/tv.css"></head>
+<body><div id="app"></div><pre id="dbg" style="position:fixed;left:0;bottom:0;background:#fff;z-index:999;font-size:12px;max-width:100%;white-space:pre-wrap;display:none"></pre>
+<script type="module">
+import { app, model } from './js/main.js';
+import { findIn, movePage, removePage, addPage } from './js/model.js';
+import { buildBundle } from './js/bundle.js';
+import { feedbackModal } from './js/screens/feedback.js';
+import { pickPhoto } from './js/screens/media.js';
+const q = new URLSearchParams(location.search);
+const s = q.get('s') || '';
+const dbg = (t) => { const d = document.getElementById('dbg'); d.style.display = 'block'; d.textContent += t + '\n'; };
+setTimeout(() => {
+  if (s.includes('changes')) {
+    model.commit('Edit price', (d) => { findIn(d, 'firepit-menu').page.sections[0].items[0].price = '£14'; }, { origin: 'test' });
+    model.commit('Reorder strips', (d) => movePage(d, 'home', 3, 1), { origin: 'test' });
+    model.commit('Hide The Deck', (d) => { findIn(d, 'deck').page.hidden = true; }, { origin: 'test' });
+    model.commit('Edit hours', (d) => { findIn(d, 'spa').page.hours[0].value = '6:00am – Midnight'; }, { origin: 'test' });
+    model.commit('Edit hotel', (d) => { d.hotel.checkout = '11:30am'; }, { origin: 'test' });
+    model.commit('Edit title', (d) => { findIn(d, 'golf').page.title = ''; }, { origin: 'test' });
+    let r = null;
+    model.commit('Delete Korean Cowgirl', (d) => { r = removePage(d, 'cowgirl'); }, { origin: 'test' });
+    model.commit('Restore', (d) => addPage(d, r.parentId, r.page, r.index), { origin: 'test', undoable: false });
+    const b = buildBundle(model.draft, { held: app.validation() });
+    const eat = b.bundle.home.children.find((p) => p.id === 'eat');
+    dbg('bundle omits deck: ' + !eat.children.some((p) => p.id === 'deck') + ' | golf held: ' + b.heldBack.map((h) => h.id).join(',') + ' | cowgirl back: ' + !!findIn(model.draft, 'cowgirl'));
+    dbg('summary: ' + app.changes().summary.join(' | '));
+  }
+  if (s.includes('dismiss')) app.browser.setPref('bannerDismissed', true);
+  const to = q.get('go');
+  if (to) { const [screen, page] = to.split('/'); app.go(screen, page ? (screen === 'menus' ? { menu: page } : { page }) : {}); }
+  setTimeout(() => {
+    if (s.includes('feedback')) feedbackModal(app);
+    if (s.includes('pick')) pickPhoto(app, { onPick: (src) => dbg('picked ' + src) });
+    if (s.includes('addsection')) document.querySelector('.strip-card.add')?.click();
+    if (s.includes('delete')) document.querySelector('.btn.danger')?.click();
+  }, 800);
+  if (s.includes('nodbg')) document.getElementById('dbg').style.display = 'none';
+}, 2500);
+</script></body></html>
