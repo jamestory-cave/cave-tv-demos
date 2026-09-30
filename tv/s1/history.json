@@ -1,5 +1,17 @@
 [
   {
+    "revision": 3,
+    "bundle": "bundles/3-29f164ab.json",
+    "publishedAt": "2026-09-30T10:29:42Z",
+    "by": "Rhys",
+    "summary": [
+      "Your Room: Photo changed",
+      "Your Room › The Penthouse › Savant: Background film added",
+      "Eat & Drink › Korean Cowgirl › The Korean Cowgirl Menu: New menu page",
+      "Pool, Gym & Treatments: Background film added"
+    ]
+  },
+  {
     "revision": 2,
     "bundle": "bundles/2-dd6996b4.json",
     "publishedAt": "2026-09-30T03:34:34Z",
