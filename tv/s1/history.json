@@ -1,5 +1,14 @@
 [
   {
+    "revision": 2,
+    "bundle": "bundles/2-dd6996b4.json",
+    "publishedAt": "2026-09-30T03:34:34Z",
+    "by": "test 1",
+    "summary": [
+      "Your Room › The Penthouse › Savant: New venue page"
+    ]
+  },
+  {
     "revision": 1,
     "bundle": "bundles/1-f204ec01.json",
     "publishedAt": "2026-09-30T00:41:07Z",
