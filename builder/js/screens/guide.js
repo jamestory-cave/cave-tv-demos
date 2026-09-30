@@ -5,7 +5,7 @@
 import { el, clear } from '../util.js';
 import { FILM } from '../media.js';
 
-const SAFE = { side: 96, topBottom: 64, band: 200, minBody: 30, minAny: 24 }; // on a 1920 x 1080 canvas
+const SAFE = { side: 96, topBottom: 64, band: 200, minBody: 30, minAny: 24, qrWidth: 340, qrHeight: 430 }; // on a 1920 x 1080 canvas
 
 /** Draws the safe-area template at 3840 x 2160 (every guide doubled) on a transparent canvas. */
 export function drawTemplate(canvas, { opaque = false } = {}) {
@@ -45,12 +45,15 @@ export function drawTemplate(canvas, { opaque = false } = {}) {
   c.font = '400 48px Inter, Helvetica, Arial, sans-serif'; c.fillStyle = 'rgba(183,153,109,0.85)';
   c.fillText('CAVE   ›   Contact & Help   ›   Fire plan', 180, 168);
   c.fillText('‹  Back', 180, 300);
-  // Corner where the QR card and slide counter sit.
-  c.strokeStyle = 'rgba(183,153,109,0.7)'; c.lineWidth = 4; c.setLineDash([20, 16]);
-  c.strokeRect(W - SAFE.side * k - 520, H - SAFE.topBottom * k - 640, 520, 640);
+  // The corner the TV reserves for the QR card (340 x 430 on a 1920 canvas) and the slide counter.
+  const qw = SAFE.qrWidth * k, qh = SAFE.qrHeight * k;
+  c.fillStyle = 'rgba(183,153,109,0.14)';
+  c.fillRect(W - SAFE.side * k - qw, H - SAFE.topBottom * k - qh, qw, qh);
+  c.strokeStyle = 'rgba(183,153,109,0.85)'; c.lineWidth = 4; c.setLineDash([20, 16]);
+  c.strokeRect(W - SAFE.side * k - qw, H - SAFE.topBottom * k - qh, qw, qh);
   c.setLineDash([]);
-  c.font = '500 36px Inter, Helvetica, Arial, sans-serif'; c.fillStyle = 'rgba(183,153,109,0.85)'; c.textAlign = 'right';
-  c.fillText('QR card and slide counter sit here (bottom right)', W - SAFE.side * k - 20, H - SAFE.topBottom * k - 660);
+  c.font = '500 36px Inter, Helvetica, Arial, sans-serif'; c.fillStyle = 'rgba(183,153,109,0.95)'; c.textAlign = 'right';
+  c.fillText(`If the page has a QR link the TV draws its card here: keep ${SAFE.qrWidth} × ${SAFE.qrHeight} px (${qw} × ${qh} here) clear`, W - SAFE.side * k - 20, H - SAFE.topBottom * k - qh - 20);
 }
 
 export function mount(host, app) {
@@ -69,7 +72,7 @@ export function mount(host, app) {
     el('li', el('b', 'Top band. '), `Keep the top ${SAFE.band} px (${SAFE.band * 2} at 3840) free of words. The TV darkens that band and draws the path line and Back over it. Pictures may run through it.`),
     el('li', el('b', 'Type. '), `Text a guest must read: ${SAFE.minBody} px or larger on a 1920 canvas (${SAFE.minBody * 2} at 3840). Nothing under ${SAFE.minAny} px. Guests read from the bed, three metres away.`),
     el('li', el('b', 'Words. '), 'About 60 at most. More than that belongs on a page built from parts, where the TV sets the type.'),
-    el('li', el('b', 'Bottom right. '), 'If the page has a QR link the TV draws a 260 px card there, and a "1 of 3" counter when there is more than one slide. Leave that corner quiet.'),
+    el('li', el('b', 'Bottom right. '), `If the page has a QR link the TV draws its card there, inside the safe area: keep the bottom-right ${SAFE.qrWidth} × ${SAFE.qrHeight} px (${SAFE.qrWidth * 2} × ${SAFE.qrHeight * 2} at 3840) clear of anything that matters. The "1 of 3" counter sits in the same corner. The template marks it; the Builder's overlay shows it once a QR link is set.`),
     el('li', el('b', 'Slides. '), 'A finished page holds 1 to 10 slides. Left and Right move between them on the remote; nothing else on the page can be selected. A slide can be a film.')));
   const tpl = el('div.row.wrap', { style: { marginTop: '10px' } });
   const canvas = document.createElement('canvas');

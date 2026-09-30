@@ -104,7 +104,8 @@ export class TVPreview {
     this.tagline = el('div.tv-tagline');
     this.back = el('div.tv-back', el('span.tv-chev', '‹'), el('span', 'Back'));
     this.back.addEventListener('click', () => this.goBack());
-    this.safe = el('div.tv-safe', el('div.tv-safe-band', el('span', 'Top band: no words here (path line and Back)')), el('div.tv-safe-margin', el('span', 'Keep words and logos inside this line')));
+    this.safe = el('div.tv-safe', el('div.tv-safe-band', el('span', 'Top band: no words here (path line and Back)')), el('div.tv-safe-margin', el('span', 'Keep words and logos inside this line')),
+      el('div.tv-safe-qr', el('span', 'QR card: keep this 340 × 430 px clear')));
     this.hoverLabel = el('div.tv-hover-label');
     this.player = el('div.tv-playing');
     this.stage.append(this.sectionsLayer, this.itemsLayer, this.leafLayer, el('div.tv-scrim-top'), this.path,
@@ -295,6 +296,7 @@ export class TVPreview {
     // Chrome. A finished page takes the whole screen: slivers hidden, path line and Back kept.
     const fin = n.level === 2 && this.pageOnShow?.type === 'finished';
     this.stage.classList.toggle('finished', fin);
+    this.stage.classList.toggle('has-qr', fin && !!this.pageOnShow?.qr);
     this.stage.classList.toggle('deep', n.level > 0);
     this.back.classList.toggle('is-focused', n.level > 0 && n.focus === 'back');
     this.tagline.textContent = this.doc.hotel?.tagline || '';

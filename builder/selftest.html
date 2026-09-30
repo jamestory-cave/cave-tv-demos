@@ -33,7 +33,7 @@ window.addEventListener('error', (e) => { const d = document.createElement('div'
 </script>
 <script type="module">
 import { config } from './config.js';
-import { canonical, clone } from './js/util.js';
+import { canonical, clone, utf8ToBase64 } from './js/util.js';
 import { model, movePage, removePage, addPage, findIn } from './js/model.js';
 import { buildBundle, bundleText } from './js/bundle.js';
 import { describeChanges } from './js/changes.js';
@@ -192,8 +192,9 @@ async function run() {
 
   // 7. Publish against a fake GitHub.
   const calls = [];
-  const fakeVersion = btoa(JSON.stringify({ schema: 1, revision: published.version.revision, bundle: published.version.bundle }));
-  const fakeHistory = btoa(JSON.stringify(published.history || []));
+  // The fake repository's files are base64 as GitHub returns them; history may hold "›" and "→", so not btoa.
+  const fakeVersion = utf8ToBase64(JSON.stringify({ schema: 1, revision: published.version.revision, bundle: published.version.bundle }));
+  const fakeHistory = utf8ToBase64(JSON.stringify(published.history || []));
   const fake = async (method, url, body) => {
     const path = url.replace(config.apiBase, '');
     calls.push(`${method} ${path}${body ? '  ' + JSON.stringify(Object.keys(body)) : ''}`);

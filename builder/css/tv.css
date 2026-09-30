@@ -80,6 +80,10 @@
 .tv-safe-band { position: absolute; left: 0; right: 0; top: 0; height: 200px; border-bottom: 2px dashed rgba(120,170,255,.9);
   background: repeating-linear-gradient(135deg, rgba(79,134,255,.22) 0 12px, rgba(79,134,255,.08) 12px 24px); }
 .tv-safe-band span { position: absolute; right: 96px; bottom: -2px; background: rgba(43,89,195,.92); color: #fff; font-size: 20px; padding: 3px 10px; }
+.tv-safe-qr { position: absolute; right: 96px; bottom: 64px; width: 340px; height: 430px; border: 2px dashed rgba(183,153,109,.95); display: none;
+  background: repeating-linear-gradient(135deg, rgba(183,153,109,.22) 0 12px, rgba(183,153,109,.08) 12px 24px); }
+.tv-safe-qr span { position: absolute; left: 0; top: -2px; transform: translateY(-100%); background: rgba(125,104,63,.95); color: #fff; font-size: 20px; padding: 3px 10px; white-space: nowrap; }
+.tv-stage.has-qr .tv-safe-qr { display: block; }
 .tv-stage.show-safe .tv-safe { display: block; }
 .tv-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 28px; color: rgba(255,255,255,.5); }
 

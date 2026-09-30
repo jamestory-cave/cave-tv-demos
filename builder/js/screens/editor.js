@@ -363,7 +363,7 @@ export function mount(host, app, params) {
   function renderSlides(box, p) {
     const slides = p.slides || [];
     box.append(el('div.note.small', { style: { marginBottom: '10px' } }, el('strong', 'Artwork rules. '),
-      'Exactly 16:9. 3840 × 2160 is best; 1920 × 1080 is the minimum. JPG or PNG up to 25 MB. On a 1920-wide canvas keep words and logos 96 px in from the sides and 64 px from the top and bottom, and out of the top 200 px where the path line and Back sit. Smallest body text 30 px; nothing under 24. About 60 words at most. ',
+      'Exactly 16:9. 3840 × 2160 is best; 1920 × 1080 is the minimum. JPG or PNG up to 25 MB. On a 1920-wide canvas keep words and logos 96 px in from the sides and 64 px from the top and bottom, and out of the top 200 px where the path line and Back sit. With a QR link, keep the bottom-right 340 × 430 px clear for the QR card. Smallest body text 30 px; nothing under 24. About 60 words at most. ',
       el('button.btn.link.sm', { type: 'button', onclick: () => app.go('guide') }, 'Full guide and template')));
     listEditor(box, {
       items: slides,
@@ -407,7 +407,9 @@ export function mount(host, app, params) {
           if (!app.media.pending.has(rec.hash) && !app.media.index.media[rec.hash]) await app.media.add(rec);
           const src = app.media.slidePath(`media/${rec.hash}-1920.jpg`);   // -3840 when the upload was 4K
           const strip = `media/${rec.hash}-1920.jpg`;
+          const hadImage = !!page().image;
           commit('Add slide', (pg) => { pg.slides = pg.slides || []; if (pg.slides.length < LIMITS.slidesMax) pg.slides.push({ image: src }); if (!pg.image) pg.image = strip; });
+          if (!hadImage) stripToast();
           n++;
           if (rec.warnings?.length) toast(`${rec.name}: ${rec.warnings.join(' ')}`, { ms: 9000 });
         } catch (e) { toast(`${file.name}: ${e.message}`, { error: true, ms: 15000 }); }
@@ -425,18 +427,26 @@ export function mount(host, app, params) {
         el('li', 'Keep words and logos inside the safe margins: 96 px from the sides, 64 px from the top and bottom, on a 1920 canvas (double at 3840).'),
         el('li', 'Keep the top 200 px (400 at 3840) free of words: the TV darkens that band and draws the path line and Back there. Pictures may run through it.'),
         el('li', 'Smallest body text 30 px on a 1920 canvas; nothing under 24. Guests read from the bed.'),
-        el('li', 'No more than about 60 words. More than that is a page built from parts.')),
+        el('li', 'No more than about 60 words. More than that is a page built from parts.'),
+        el('li', 'If the page has a QR link, keep the bottom-right 340 × 430 px (680 × 860 at 3840) clear: the TV draws the QR card there.')),
       el('p.help', 'The Builder checks size, shape and file type and refuses anything else. It cannot read the artwork, so margins and text size are checked by eye with the safe-area overlay.'),
-      el('div.row', { style: { marginTop: '10px' } }, el('button.btn.sm', { type: 'button', onclick: () => { m.close(); pickPhoto(app, { use: 'slide', onPick: (src) => { commit('Add slide', (pg) => { pg.slides = pg.slides || []; pg.slides.push({ image: app.media.slidePath(src) }); if (!pg.image) pg.image = src; }); renderSide(); } }); } }, 'Choose from Media instead')));
+      el('div.row', { style: { marginTop: '10px' } }, el('button.btn.sm', { type: 'button', onclick: () => { m.close(); pickPhoto(app, { use: 'slide', onPick: (src) => { const hadImage = !!page().image; commit('Add slide', (pg) => { pg.slides = pg.slides || []; pg.slides.push({ image: app.media.slidePath(src) }); if (!pg.image) pg.image = src; }); if (!hadImage) stripToast(); renderSide(); } }); } }, 'Choose from Media instead')));
     const m = modal({ title: `Add a slide to ${p.title}`, body, wide: false, actions: [{ label: 'Cancel' }] });
     void picked;
   }
 
+  /** Said once, when the first slide quietly becomes the strip photo. */
+  function stripToast() {
+    toast('Slide 1 is now the strip photo as well. If the artwork is mostly lettering, choose a photograph under Photo instead.', { ms: 9000 });
+  }
+
   function addFilmSlide(p) {
     pickFilm(app, { onPick: (src, rec) => {
+      const hadImage = !!page().image;
       commit('Add film slide', (pg) => { pg.slides = pg.slides || []; pg.slides.push({ film: src, poster: rec.poster || undefined }); if (!pg.image && rec.poster) pg.image = rec.poster; });
+      if (!hadImage && rec.poster) stripToast();
       renderSide();
-      if (!rec.poster) posterCapture(app, src, { title: p.title, onDone: (ps) => commit('Set poster', (pg) => { const sl = pg.slides.find((x) => x.film === src); if (sl) sl.poster = ps; if (!pg.image) pg.image = ps; }) });
+      if (!rec.poster) posterCapture(app, src, { title: p.title, onDone: (ps) => { const had = !!page().image; commit('Set poster', (pg) => { const sl = pg.slides.find((x) => x.film === src); if (sl) sl.poster = ps; if (!pg.image) pg.image = ps; }); if (!had) stripToast(); } });
     } });
   }
 
