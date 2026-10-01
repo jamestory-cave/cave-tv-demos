@@ -190,7 +190,8 @@
 
 /* Background film: after 6 s without input the TV fades the text and scrim so the film shows; any press brings them back. */
 .tv-page, .tv-backdrop::after { transition: opacity 700ms var(--ease); }
-.tv-stage.text-faded .tv-page, .tv-stage.text-faded .tv-backdrop::after, .tv-stage.text-faded .tv-strip.is-leaf .tv-scrim { opacity: .1; }
+.tv-stage.text-faded .tv-page { opacity: 0; }
+.tv-stage.text-faded .tv-backdrop::after, .tv-stage.text-faded .tv-strip.is-leaf .tv-scrim { opacity: .1; }
 
 /* ---- edit mode: clickable fields ---- */
 .tv-stage.edit [data-f] { cursor: pointer; outline: 2px dashed transparent; outline-offset: 6px; transition: outline-color 120ms; }
