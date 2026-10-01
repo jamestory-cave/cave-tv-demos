@@ -1,8 +1,9 @@
 // A small MP4 reader for the upload checks: walks the box structure and
 // reports the container brand, each track's kind and codec, the picture
 // size and the duration. Reads structure only, never decodes video. This is
-// what lets the Builder say "this is HEVC, the TV needs H.264" and "this
-// film has no audio track" without trusting the browser's decoder.
+// what lets the Builder say "this is ProRes, the TV needs H.264 or HEVC",
+// "this HEVC is tagged hev1, not hvc1" and "this film has no audio track"
+// without trusting the browser's decoder.
 
 const CONTAINERS = new Set(['moov', 'trak', 'mdia', 'minf', 'stbl', 'edts', 'dinf', 'udta', 'mvex', 'moof', 'traf']);
 
@@ -103,4 +104,8 @@ export const CODEC_NAMES = {
 };
 export const codecName = (c) => CODEC_NAMES[c] || (c ? `"${c}"` : 'unknown');
 export const isH264 = (c) => c === 'avc1' || c === 'avc3';
+// The Apple TV plays HEVC tagged hvc1 (parameter sets in the sample entry).
+// hev1 keeps them in the stream, which Apple's players may refuse.
+export const isHEVC = (c) => c === 'hvc1' || c === 'hev1';
+export const isHEV1 = (c) => c === 'hev1';
 export const isAAC = (c) => c === 'mp4a';

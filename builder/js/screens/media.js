@@ -58,7 +58,7 @@ function dropZone(app, onDone, { slide = false, accept = 'image/jpeg,image/png' 
   const withFilms = /video/.test(accept);
   const zone = el('div.drop',
     el('div', el('strong', slide ? 'Drop artwork here ' : withFilms ? 'Drop photos or films here ' : 'Drop photos here '), el('span.muted', 'or '), el('label.btn.sm', { for: input.id }, 'Choose files'), input),
-    el('span.muted.small', slide ? 'JPG or PNG · exactly 16:9 · 3840 × 2160 best, 1920 × 1080 minimum · up to 25 MB' : withFilms ? 'Photos: JPG or PNG, 1920 px wide or larger, up to 25 MB · Films: MP4, H.264, 1920 × 1080, up to 60 MB' : 'JPG or PNG · 1920 px wide or larger for full screen · up to 25 MB'));
+    el('span.muted.small', slide ? 'JPG or PNG · exactly 16:9 · 3840 × 2160 best, 1920 × 1080 minimum · up to 25 MB' : withFilms ? 'Photos: JPG or PNG, 1920 px wide or larger, up to 25 MB · Films: MP4, H.264 or HEVC, 1920 × 1080 or 3840 × 2160, up to 60 MB' : 'JPG or PNG · 1920 px wide or larger for full screen · up to 25 MB'));
   zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('over'); });
   zone.addEventListener('dragleave', () => zone.classList.remove('over'));
   zone.addEventListener('drop', async (e) => { e.preventDefault(); zone.classList.remove('over'); await uploadFiles(app, [...e.dataTransfer.files], null, { slide }); onDone(); });

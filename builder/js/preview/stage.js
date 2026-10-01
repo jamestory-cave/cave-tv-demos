@@ -3,6 +3,12 @@
 //   edit    click a strip to open it, click any text to select its field
 //   remote  arrow keys, Enter, Esc drive it like the Siri Remote
 //
+// Background film (mirrors the TV, 1 Oct 2026): on a page with a background
+// film the text layer and scrim fade to 10% after 6 s without input so the
+// film shows; any press brings the text back (a move also acts; Select and
+// Menu only restore). Select on a text block, facts or hours hides the text
+// at once.
+//
 // Known differences from the TV: no slow photo zoom, no staggered entrance
 // timing beyond a simple fade, fonts are the same files but the browser's
 // text layout is not SwiftUI's, and QR codes may pick a different mask.
@@ -90,6 +96,9 @@ export class TVPreview {
     this.playing = null;
     this.selectedField = null;
     this.stripEls = new Map();
+    this.faded = false;
+    this.idleTimer = null;
+    this.fadeAfterMs = 6000;
     this.build();
   }
 
@@ -132,7 +141,7 @@ export class TVPreview {
     this.fit();
   }
 
-  destroy() { this.resize.disconnect(); window.removeEventListener('resize', this.onWindowResize); }
+  destroy() { this.resize.disconnect(); window.removeEventListener('resize', this.onWindowResize); clearTimeout(this.idleTimer); }
 
   fit() {
     const s = this.viewport.clientWidth / W;
@@ -319,6 +328,31 @@ export class TVPreview {
       this.sectionsLayer.append(el('div.tv-empty', 'No sections to show. Add one on Home.'));
     }
     if (this.selectedField) this.setSelectedField(this.selectedField);
+    // Any change of what is on show brings the text back and restarts the idle clock.
+    this.setFaded(false);
+    this.armIdle();
+  }
+
+  // ---- background film: the text fades so the film shows (as on the TV) ------
+
+  /** True when the page on show has a background film and the text may fade. */
+  canFade() {
+    const page = this.pageOnShow;
+    return this.mode === 'remote' && this.nav.level === 2 && !this.playing && !!page?.backgroundFilm?.film && page.type !== 'finished';
+  }
+
+  armIdle() {
+    clearTimeout(this.idleTimer);
+    this.idleTimer = null;
+    if (!this.canFade()) return;
+    this.idleTimer = setTimeout(() => { this.idleTimer = null; if (this.canFade()) this.setFaded(true); }, this.fadeAfterMs);
+  }
+
+  setFaded(on) {
+    this.faded = !!on;
+    this.stage.classList.toggle('text-faded', this.faded);
+    const lab = this.leafLayer.querySelector('.tv-bgfilm');
+    if (lab) lab.lastChild.textContent = this.faded ? 'Background film · text faded · any press brings it back' : 'Background film · loops silently';
   }
 
   syncStrips(layer, kind, pages, span, roles, label, captionWidth) {
@@ -576,6 +610,7 @@ export class TVPreview {
   /** The preview never plays video: Select on a film shows a placeholder the TV's player would replace. */
   play(title) {
     this.playing = title || 'Film';
+    this.armIdle();
     clear(this.player).append(el('div.t', 'Playing: ' + this.playing), el('div.s', 'The TV opens its own player here, full screen with sound. Menu (Esc) stops it and returns to the page.'));
     this.player.classList.add('on');
   }
@@ -584,6 +619,7 @@ export class TVPreview {
     this.playing = null;
     this.player.classList.remove('on');
     this.applyFocus();
+    this.armIdle();
   }
 
   /** Position of a node inside the page area, in TV pixels, independent of nesting and the stage scale. */
@@ -628,6 +664,20 @@ export class TVPreview {
   key(k) {
     const n = this.nav;
     if (this.playing) { if (k === 'back' || k === 'enter') this.stopPlaying(); return; }
+    if (this.faded) {
+      // Any press brings the text back. A move also acts; Select and Menu only restore.
+      this.setFaded(false);
+      this.armIdle();
+      if (k === 'enter' || k === 'back') return;
+    } else if (k === 'enter' && this.canFade() && n.focus === 'page' && ['body', 'facts', 'hours'].includes(n.stop)) {
+      // Select on a text block, facts or hours hides the text at once so the film shows.
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+      this.setFaded(true);
+      return;
+    } else {
+      this.armIdle();
+    }
     if (k === 'back') { this.goBack(); return; }
     if (n.level === 0) {
       if (k === 'left' && n.s > 0) { n.s--; this.render(FOCUS_MS); }

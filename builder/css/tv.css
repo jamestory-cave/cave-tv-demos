@@ -188,6 +188,10 @@
 .tv-backdrop::after { content: ''; position: absolute; inset: 0; background:
   linear-gradient(to bottom, rgba(8,8,8,.88) 0%, rgba(8,8,8,.3) 22%, rgba(8,8,8,.55) 70%, rgba(8,8,8,.94) 100%), rgba(8,8,8,.72); }
 
+/* Background film: after 6 s without input the TV fades the text and scrim so the film shows; any press brings them back. */
+.tv-page, .tv-backdrop::after { transition: opacity 700ms var(--ease); }
+.tv-stage.text-faded .tv-page, .tv-stage.text-faded .tv-backdrop::after, .tv-stage.text-faded .tv-strip.is-leaf .tv-scrim { opacity: .1; }
+
 /* ---- edit mode: clickable fields ---- */
 .tv-stage.edit [data-f] { cursor: pointer; outline: 2px dashed transparent; outline-offset: 6px; transition: outline-color 120ms; }
 .tv-stage.edit [data-f]:hover { outline-color: rgba(120,170,255,.85); }

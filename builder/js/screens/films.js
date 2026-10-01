@@ -44,7 +44,7 @@ export function filmDropZone(app, onDone, { compact = false } = {}) {
   input.addEventListener('change', async () => { const files = [...input.files]; input.value = ''; const recs = await uploadFilmFiles(app, files); onDone(recs); });
   const zone = el('div.drop' + (compact ? '.compact' : ''),
     el('div', el('strong', compact ? 'Drop a film here ' : 'Drop films here '), el('span.muted', 'or '), el('label.btn.sm', { for: input.id }, 'Choose a file'), input),
-    el('span.muted.small', 'MP4 · H.264 · AAC · 1920 × 1080 · up to 60 MB and 3 minutes'));
+    el('span.muted.small', 'MP4 · H.264 or HEVC · AAC · 1920 × 1080 or 3840 × 2160 · up to 60 MB and 3 minutes'));
   zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('over'); });
   zone.addEventListener('dragleave', () => zone.classList.remove('over'));
   zone.addEventListener('drop', async (e) => { e.preventDefault(); zone.classList.remove('over'); const recs = await uploadFilmFiles(app, [...e.dataTransfer.files]); onDone(recs); });
@@ -124,6 +124,7 @@ export function posterCapture(app, filmSrc, { onDone, title, previous = null }) 
   range.addEventListener('input', () => seekTo(Number(range.value) / 1000));
   video.addEventListener('seeked', () => { seeking = false; });
   video.addEventListener('loadedmetadata', () => { seekTo(0.1); range.value = '100'; });
+  video.addEventListener('error', () => { status.textContent = `This browser cannot play this film${f.codec && /^hvc1|^hev1/.test(f.codec) ? ' (HEVC)' : ''}, so it cannot capture a frame. Upload a poster instead, or capture one in Safari.`; });
   const steps = el('div.row', { style: { marginTop: '6px', gap: '6px' } },
     el('button.btn.sm', { type: 'button', onclick: () => { range.value = String(Math.max(0, Number(range.value) - 10)); seekTo(Number(range.value) / 1000); } }, '‹ 1%'),
     el('button.btn.sm', { type: 'button', onclick: () => { range.value = String(Math.min(1000, Number(range.value) + 10)); seekTo(Number(range.value) / 1000); } }, '1% ›'),

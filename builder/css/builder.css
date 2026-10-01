@@ -287,3 +287,8 @@ table.dishes tr.drop-after td { box-shadow: 0 3px 0 var(--accent) inset; }
 .guide li { margin-bottom: 4px; }
 .guide .two { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 @media (max-width: 1000px) { .guide .two { grid-template-columns: 1fr; } }
+.guide table.recipes { border-collapse: collapse; width: 100%; margin-top: 8px; font-size: 13.5px; line-height: 1.45; }
+.guide table.recipes th, .guide table.recipes td { padding: 7px 10px; border-bottom: 1px solid var(--line-2); vertical-align: top; text-align: left; }
+.guide table.recipes thead th { font-weight: 700; }
+.guide table.recipes tbody th { font-weight: 600; white-space: nowrap; width: 1%; }
+.guide table.recipes td { width: 50%; }

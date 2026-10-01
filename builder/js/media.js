@@ -1,23 +1,28 @@
 // Photos and films. Photos: upload once, resized in the browser to 1920 and
 // 800 wide, named by the content hash of the original file. Films: uploaded
-// as they are (MP4, H.264, checked in the browser, never transcoded), named
-// media/<hash12>-<height>.mp4, with a poster JPG captured or uploaded. The
+// as they are (MP4, H.264 or HEVC, checked in the browser, never transcoded),
+// named media/<hash12>-<height>.mp4, with a poster JPG captured or uploaded. The
 // registry joins what is published (media/index.json) with what is waiting
 // in this browser.
 
 import { sha256Hex } from './util.js';
-import { probeMP4, codecName, isH264, isAAC } from './mp4.js';
+import { probeMP4, codecName, isH264, isHEVC, isHEV1, isAAC } from './mp4.js';
 
 export const SIZES = [1920, 800];
 export const SLIDE_SIZE = 3840;   // finished-page slides keep a native copy when the upload is 4K
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 export const MIN_UPLOAD_WIDTH = 800;
 
-// Film rules (PROTOTYPE.md 2c, set by GitHub's limits).
+// Film rules (PROTOTYPE.md 2c). The 60 MB cap is the prototype hosting's
+// (GitHub) limit, not the TV's; it goes when the hotel's own server takes over.
+// 1080p: H.264 recommended, 6 Mb/s. 4K: HEVC recommended, about 20 Mb/s, which
+// at 60 MB fits only short clips (15 to 25 s).
 export const FILM = {
-  maxBytes: 60 * 1024 * 1024, maxSeconds: 180, backgroundWarnBytes: 15 * 1024 * 1024, width: 1920, height: 1080, smallWidth: 1280, smallHeight: 720,
-  targetMbps: 6, warnMbps: 9, bestMinSeconds: 30, bestMaxSeconds: 90, publishWarnBytes: 400 * 1024 * 1024,
+  maxBytes: 60 * 1024 * 1024, maxSeconds: 180, backgroundWarnBytes: 15 * 1024 * 1024,
+  width: 1920, height: 1080, uhdWidth: 3840, uhdHeight: 2160, smallWidth: 1280, smallHeight: 720,
+  targetMbps: 6, warnMbps: 9, uhdTargetMbps: 20, uhdWarnMbps: 30, bestMinSeconds: 30, bestMaxSeconds: 90, publishWarnBytes: 400 * 1024 * 1024,
 };
+export const FILM_LIMIT_NOTE = `${FILM.maxBytes / 1048576} MB is the prototype hosting's limit (GitHub), not the TV's; it goes away when the hotel's own server replaces GitHub.`;
 
 /** media/<hash12>-<w>.jpg or media/<hash12>-<h>.mp4 -> {hash, width|height, kind} or null */
 export function parseMediaPath(src) {
@@ -139,9 +144,9 @@ function loadVideo(file) {
     v.preload = 'metadata';
     let done = false;
     const finish = (fn) => { if (done) return; done = true; clearTimeout(timer); fn(); };
-    const timer = setTimeout(() => finish(() => reject(new Error('The browser could not read this film in time. It may not be H.264.'))), 20000);
+    const timer = setTimeout(() => finish(() => reject(new Error('The browser could not read this film in time. It may not be H.264 or HEVC.'))), 20000);
     v.addEventListener('loadedmetadata', () => finish(() => resolve({ video: v, url })));
-    v.addEventListener('error', () => finish(() => { URL.revokeObjectURL(url); reject(new Error('The browser cannot play this film. The TV needs an MP4 with H.264 video and AAC audio.')); }));
+    v.addEventListener('error', () => finish(() => { URL.revokeObjectURL(url); reject(new Error('The browser cannot play this film. The TV needs an MP4 with H.264 or HEVC video and AAC audio.')); }));
     v.src = url;
   });
 }
@@ -160,6 +165,60 @@ function tryPlayback(video) {
   });
 }
 
+/** The 60 MB cap, with the reason: null when the file fits. */
+export function filmSizeError(bytes) {
+  if (bytes <= FILM.maxBytes) return null;
+  return `This film is ${mb(bytes)}. Films must be ${FILM.maxBytes / 1048576} MB or less: that is the prototype hosting's limit (GitHub), not the TV's, and it goes away when the hotel's own server replaces GitHub. Export it shorter or at a lower bitrate: 1080p at ${FILM.targetMbps} Mb/s is about 45 MB a minute; 4K at a sensible bitrate fits only short clips of about 15 to 25 seconds, so longer films should stay 1080p for now.`;
+}
+
+/** Container, codec and index checks from the probe alone: {error} or {warnings}. */
+export function filmStructureRules(probe) {
+  const warnings = [];
+  const no = (error) => ({ error, warnings });
+  if (probe.isQuickTime) return no('This is a QuickTime movie inside an .mp4 name. Export it again as MP4 (H.264 or HEVC video, AAC audio).');
+  if (!probe.hasMoov) return no('This file does not look like a finished MP4 (no index). If it was still being written, wait for the export to finish.');
+  const v = probe.video;
+  if (!v) return no('This MP4 has no video track.');
+  if (isHEV1(v.codec)) return no('The video is HEVC tagged "hev1", which the Apple TV may not play. Export it again so it is tagged "hvc1": Media Encoder and Apple\'s tools write hvc1; in FFmpeg add "-tag:v hvc1".');
+  if (!isH264(v.codec) && !isHEVC(v.codec)) return no(`The video is ${codecName(v.codec)}, which the TV cannot play. Export it again as H.264 for 1080p or HEVC (H.265) for 4K (in Media Encoder: format H.264 or HEVC, preset "Match Source – High bitrate" or the Cave preset).`);
+  if (probe.audio && !isAAC(probe.audio.codec)) return no(`The sound track is ${codecName(probe.audio.codec)}; the TV needs AAC. In Media Encoder set Audio to AAC, 192 kb/s.`);
+  if (probe.moovFirst === false) warnings.push('The film\'s index is at the end of the file, so the TV must download all of it before it can start. Tick "Fast start" (web optimised) when exporting.');
+  return { warnings };
+}
+
+/**
+ * All the film rules as a pure function, so the self-test can run them without
+ * a browser decoder. `probe` is probeMP4's result; width, height and seconds
+ * are what the browser measured or, when it could not decode, the probe's own
+ * numbers. Returns {error} with a plain message, or {warnings, mbps, path, hevc}.
+ */
+export function filmRules(probe, { bytes = 0, width = 0, height = 0, seconds = 0, hash = '' } = {}) {
+  const sizeError = filmSizeError(bytes);
+  if (sizeError) return { error: sizeError, warnings: [] };
+  const structure = filmStructureRules(probe);
+  if (structure.error) return structure;
+  const warnings = structure.warnings;
+  const no = (error) => ({ error, warnings });
+  const v = probe.video;
+
+  const full = width === FILM.width && height === FILM.height;
+  const uhd = width === FILM.uhdWidth && height === FILM.uhdHeight;
+  const small = width === FILM.smallWidth && height === FILM.smallHeight;
+  if (!full && !uhd && !small) return no(`This film is ${width} × ${height}. The TV needs 1920 × 1080 or 3840 × 2160 (1280 × 720 is accepted with a warning).`);
+  if (small) warnings.push('1280 × 720 accepted, but it will look soft on a 4K TV. Export at 1920 × 1080 (or 3840 × 2160 for a short clip).');
+  if (uhd && isH264(v.codec)) warnings.push('4K as H.264 makes large files; HEVC (H.265) is the recommended codec at 3840 × 2160 and is about a third smaller for the same quality.');
+  if (seconds > FILM.maxSeconds) return no(`This film runs ${fmtSeconds(seconds)}. The limit is 3 minutes; 30 to 90 seconds is the sweet spot.`);
+  if (seconds < 1) return no('This film is under a second long.');
+  const mbps = bitrateMbps(bytes, seconds);
+  const warnAt = uhd ? FILM.uhdWarnMbps : FILM.warnMbps, target = uhd ? FILM.uhdTargetMbps : FILM.targetMbps;
+  if (mbps > warnAt) warnings.push(`${mbps.toFixed(1)} Mb/s is higher than needed; ${target} Mb/s looks the same on the TV and downloads faster.`);
+  if (seconds > FILM.bestMaxSeconds) warnings.push(`${fmtSeconds(seconds)} is longer than the 30 to 90 seconds guests tend to watch.`);
+  return { warnings, mbps, path: hash ? filmPath(hash, height) : null, hevc: isHEVC(v.codec) };
+}
+
+/** What the browser would need to say it can play this film's codec. */
+const canPlayTypeFor = (codec) => isHEVC(codec) ? 'video/mp4; codecs="hvc1.1.6.L153.B0"' : 'video/mp4; codecs="avc1.640028"';
+
 /**
  * Reads a film file, checks it against the rules, and returns a record or
  * throws with a plain message. Returns
@@ -172,57 +231,52 @@ export async function prepareFilm(file, { name } = {}) {
   const isMP4Type = /^video\/(mp4|x-m4v)$/.test(file.type) || ['mp4', 'm4v'].includes(ext);
   if (!isMP4Type) {
     const what = { mov: 'a QuickTime .mov', webm: 'a WebM', avi: 'an AVI', mkv: 'an MKV', wmv: 'a Windows Media', mpg: 'an MPEG', mpeg: 'an MPEG', mxf: 'an MXF', prores: 'a ProRes' }[ext] || `a .${ext}`;
-    throw new Error(`This is ${what} file. The TV plays MP4 only: export it again as MP4 (H.264 video, AAC audio, 1920 × 1080).`);
+    throw new Error(`This is ${what} file. The TV plays MP4 only: export it again as MP4 (H.264 or HEVC video, AAC audio, 1920 × 1080 or 3840 × 2160).`);
   }
-  if (file.size > FILM.maxBytes) {
-    throw new Error(`This film is ${mb(file.size)}. Files published through GitHub must be 60 MB or less. Export it shorter, or at a lower bitrate (6 Mb/s gives about 45 MB a minute).`);
-  }
+  // Size and structure first, before the browser is asked to decode anything.
+  const sizeError = filmSizeError(file.size);
+  if (sizeError) throw new Error(sizeError);
   const buffer = await file.arrayBuffer();
   const bytes = new Uint8Array(buffer);
   const hash = (await sha256Hex(bytes)).slice(0, 12);
   const probe = probeMP4(buffer);
-  const warnings = [];
-  if (probe.isQuickTime) throw new Error('This is a QuickTime movie inside an .mp4 name. Export it again as MP4 (H.264, AAC).');
-  if (!probe.hasMoov) throw new Error('This file does not look like a finished MP4 (no index). If it was still being written, wait for the export to finish.');
+  const structure = filmStructureRules(probe);
+  if (structure.error) throw new Error(structure.error);
   const v = probe.video;
-  if (!v) throw new Error('This MP4 has no video track.');
-  if (!isH264(v.codec)) {
-    throw new Error(`The video is ${codecName(v.codec)}, which the TV cannot play. Export it again as H.264 (in Media Encoder: format H.264, preset "Match Source – High bitrate" or the Cave preset).`);
+
+  // The browser is a second opinion on size, length and whether it decodes.
+  // It may not play HEVC at all (Firefox on some systems); then the file
+  // structure is the authority and the poster must be uploaded or captured elsewhere.
+  const hevc = isHEVC(v.codec);
+  const canType = document.createElement('video').canPlayType(canPlayTypeFor(v.codec));
+  let video = null, url = null;
+  try { ({ video, url } = await loadVideo(file)); } catch (e) { if (!(hevc && !canType)) throw e; }
+  const width = video?.videoWidth || v.width, height = video?.videoHeight || v.height;
+  const seconds = video && Number.isFinite(video.duration) ? video.duration : probe.duration || 0;
+  const release = () => { if (!video) return; video.removeAttribute('src'); video.load(); URL.revokeObjectURL(url); };
+  const fail = (m) => { release(); throw new Error(m); };
+  const rules = filmRules(probe, { bytes: file.size, width, height, seconds, hash });
+  if (rules.error) fail(rules.error);
+  const warnings = rules.warnings;
+  const mbps = rules.mbps;
+
+  let played = false;
+  if (video) {
+    played = await tryPlayback(video);
+    if (!played && canType) fail(`The browser could not decode this film even though it says it is ${codecName(v.codec)}. The export may be damaged; try exporting it again.`);
+    if (!canType) warnings.push(`This browser cannot say whether it plays ${codecName(v.codec)}; the file structure looks right.`);
+  } else {
+    warnings.push('This browser cannot play HEVC, so the Builder checked the file structure only. To capture a poster, open the Builder in Safari, or upload a poster instead.');
   }
-  if (probe.audio && !isAAC(probe.audio.codec)) warnings.push(`Audio is ${codecName(probe.audio.codec)}, not AAC; the TV may play it silently. Export with AAC audio.`);
-  if (probe.moovFirst === false) warnings.push('The film\'s index is at the end of the file, so the TV must download all of it before it can start. Tick "Fast start" (web optimised) when exporting.');
-
-  const { video, url } = await loadVideo(file);
-  const width = video.videoWidth || v.width, height = video.videoHeight || v.height;
-  const seconds = Number.isFinite(video.duration) ? video.duration : probe.duration || 0;
-  const fail = (m) => { URL.revokeObjectURL(url); throw new Error(m); };
-  const full = width === FILM.width && height === FILM.height;
-  const small = width === FILM.smallWidth && height === FILM.smallHeight;
-  if (!full && !small) fail(`This film is ${width} × ${height}. The TV needs 1920 × 1080 (1280 × 720 is accepted with a warning).`);
-  if (small) warnings.push('1280 × 720 accepted, but it will look soft on a 4K TV. 1920 × 1080 is the standard.');
-  if (seconds > FILM.maxSeconds) fail(`This film runs ${fmtSeconds(seconds)}. The limit is 3 minutes; 30 to 90 seconds is the sweet spot.`);
-  if (seconds < 1) fail('This film is under a second long.');
-  const mbps = bitrateMbps(file.size, seconds);
-  if (mbps > FILM.warnMbps) warnings.push(`${mbps.toFixed(1)} Mb/s is higher than needed; ${FILM.targetMbps} Mb/s looks the same on the TV and downloads faster.`);
-  if (seconds > FILM.bestMaxSeconds) warnings.push(`${fmtSeconds(seconds)} is longer than the 30 to 90 seconds guests tend to watch.`);
-
-  // Can the browser actually decode it? A profile the TV cannot play is rare
-  // with H.264, but a broken export is not.
-  const canType = video.canPlayType('video/mp4; codecs="avc1.640028"');
-  const played = await tryPlayback(video);
-  if (!played && canType) fail('The browser could not decode this film even though it says it is H.264. The export may be damaged; try exporting it again.');
-  if (!canType) warnings.push('This browser cannot say whether it plays H.264; the file structure looks right.');
 
   // Audio: the container is the authority; the browser is a second opinion.
   let audio = probe.audio ? true : (probe.tracks.length ? false : null);
-  if (audio === null) {
+  if (audio === null && video) {
     if (typeof video.mozHasAudio === 'boolean') audio = video.mozHasAudio;
     else if (video.audioTracks) audio = video.audioTracks.length > 0;
     else if (typeof video.webkitAudioDecodedByteCount === 'number') audio = video.webkitAudioDecodedByteCount > 0;
   }
-  video.removeAttribute('src');
-  video.load();
-  URL.revokeObjectURL(url);
+  release();
   return {
     kind: 'film', hash, name: cleanName(name || file.name, 'Film'), width, height, seconds: Math.round(seconds * 10) / 10, bytes: file.size,
     mbps: Math.round(mbps * 10) / 10, codec: v.codec, audio, audioCodec: probe.audio?.codec || null, warnings, blob: file, poster: null,

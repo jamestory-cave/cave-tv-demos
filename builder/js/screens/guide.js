@@ -93,22 +93,29 @@ export function mount(host, app) {
   // ---- film ----
   const film = el('div.panel.guide', { style: { marginBottom: '16px' } });
   film.append(el('h2', 'Films'));
+  const limitMB = FILM.maxBytes / 1048576;
   film.append(el('ul',
-    el('li', el('b', 'Container and codecs. '), 'MP4 with H.264 video and AAC stereo audio. Nothing else plays on the TV: not .mov, ProRes, HEVC (H.265), WebM or AV1.'),
-    el('li', el('b', 'Picture. '), '1920 × 1080, 25 or 30 frames a second, progressive. 1280 × 720 is accepted with a warning and looks soft. 4K films are refused: the file limit makes them impractical.'),
-    el('li', el('b', 'Size and length. '), `Up to ${FILM.maxBytes / 1048576} MB and 3 minutes. 30 to 90 seconds is the sweet spot. At ${FILM.targetMbps} Mb/s a 60-second film is about 45 MB.`),
+    el('li', el('b', 'Container and codecs. '), 'MP4 with H.264 or HEVC (H.265) video and AAC stereo audio. The Apple TV 4K plays both codecs. Nothing else plays: not .mov, ProRes, WebM or AV1. HEVC must be tagged "hvc1" (Media Encoder and Apple\'s tools do this; a file tagged "hev1" is refused and needs re-exporting).'),
+    el('li', el('b', 'Picture. '), '1920 × 1080 or 3840 × 2160, 25 or 30 frames a second, progressive. H.264 is the recommended codec at 1080p; HEVC at 4K. 1280 × 720 is accepted with a warning and looks soft.'),
+    el('li', el('b', 'Size and length. '), `Up to ${limitMB} MB and 3 minutes. The ${limitMB} MB cap is the prototype hosting's limit (GitHub), not the TV's: it goes away when the hotel's own server replaces GitHub. At ${FILM.targetMbps} Mb/s a 60-second 1080p film is about 45 MB; 4K at a sensible bitrate fits only short clips of about 15 to 25 seconds, so longer films should stay 1080p for now. 30 to 90 seconds is the sweet spot.`),
+    el('li', el('b', 'Sound. '), 'AAC only. A film with AIFF, WAV, PCM or Apple Lossless sound is refused: in Media Encoder set Audio to AAC, 192 kb/s.'),
     el('li', el('b', 'Poster. '), 'Every film needs a still, shown before it plays and whenever the film has not downloaded yet. The Builder captures one from any frame, or you can upload a 1920 × 1080 JPG.'),
     el('li', el('b', 'Background loops. '), 'A silent film that loops behind a page: 8 to 20 seconds, ending where it starts, exported with no audio track (or marked as silent in Media). Aim for under 15 MB so every TV downloads it quickly (the Builder warns above that); 60 MB is the hard limit for any film.'),
     el('li', el('b', 'Fast start. '), 'Tick "Use fast start" / "web optimised" so the index is at the front of the file and the TV can start before the whole file has arrived.')));
-  film.append(el('h3', { style: { marginTop: '14px' } }, 'Adobe Media Encoder recipe'));
-  film.append(el('ol', { style: { paddingLeft: '20px', lineHeight: '1.6' } },
-    el('li', 'Format: ', el('b', 'H.264'), '. Preset: start from "Match Source – High bitrate", then set the values below and save it as a preset called "Cave TV".'),
-    el('li', 'Video: 1920 × 1080, frame rate "same as source" (25 or 30), field order Progressive, aspect Square Pixels, profile High, level 4.1 or 4.2.'),
-    el('li', 'Bitrate: ', el('b', 'VBR, 1 pass'), ', target ', el('b', `${FILM.targetMbps} Mb/s`), ', maximum 8 Mb/s. Leave "Render at maximum depth" and "Maximum render quality" off unless the source is very fine grain.'),
-    el('li', 'Audio: ', el('b', 'AAC'), ', stereo, 48 kHz, ', el('b', '192 kb/s'), '. For a background loop untick "Export audio" entirely.'),
-    el('li', 'Multiplexer: MP4, ', el('b', 'Use fast start'), ' on.'),
-    el('li', 'Check the estimated file size in the export panel: under 60 MB. If it is over, shorten the film or lower the target bitrate to 4 or 5 Mb/s.')));
-  film.append(el('p.small.muted', { style: { marginTop: '8px' } }, 'Premiere Pro and After Effects export through the same Media Encoder settings. From Final Cut Pro use "Export File", format Computer, video codec H.264 Better Quality, and check the size.'));
+  film.append(el('h3', { style: { marginTop: '14px' } }, 'Adobe Media Encoder: two recipes'));
+  const row = (label, a, b) => el('tr', el('th', { scope: 'row' }, label), el('td', a), el('td', b));
+  film.append(el('table.recipes',
+    el('thead', el('tr', el('th', ''), el('th', '1080p H.264'), el('th', '4K HEVC, short clips only on the prototype'))),
+    el('tbody',
+      row('Use it for', 'Any film: the standard today. Fits up to 3 minutes within the file limit.', `Clips of about 15 to 25 seconds where the extra sharpness shows (artwork, slow pans). Longer than that will not fit in ${limitMB} MB until the hotel\'s own server takes over.`),
+      row('Format', 'H.264', 'HEVC (H.265)'),
+      row('Preset to start from', '"Match Source – High bitrate", then set the values below and save it as "Cave TV 1080p"', '"Match Source – High bitrate", then set the values below and save it as "Cave TV 4K"'),
+      row('Video', '1920 × 1080, frame rate "same as source" (25 or 30), Progressive, Square Pixels, profile High, level 4.1 or 4.2', '3840 × 2160, frame rate "same as source" (25 or 30), Progressive, Square Pixels, profile Main, level 5.1, 8-bit'),
+      row('Bitrate', `VBR, 1 pass, target ${FILM.targetMbps} Mb/s, maximum 8 Mb/s`, `VBR, 1 pass, target ${FILM.uhdTargetMbps} Mb/s, maximum 25 Mb/s`),
+      row('Audio', 'AAC, stereo, 48 kHz, 192 kb/s (untick "Export audio" for a background loop)', 'AAC, stereo, 48 kHz, 192 kb/s (untick "Export audio" for a background loop)'),
+      row('Multiplexer', 'MP4, "Use fast start" on', 'MP4, "Use fast start" on'),
+      row(`Fits in ${limitMB} MB`, `About 80 s at 6 Mb/s; shorten or drop to 4 or 5 Mb/s if the export panel says more than ${limitMB} MB`, `About 24 s at 20 Mb/s; if the export panel says more than ${limitMB} MB, shorten it or make it 1080p instead`))));
+  film.append(el('p.small.muted', { style: { marginTop: '8px' } }, 'Leave "Render at maximum depth" and "Maximum render quality" off unless the source is very fine grain. Premiere Pro and After Effects export through the same Media Encoder settings. From Final Cut Pro use "Export File", format Computer, video codec H.264 Better Quality (or HEVC 8-bit for 4K), and check the size.'));
   main.append(film);
 
   // ---- what the builder checks ----
@@ -117,7 +124,7 @@ export function mount(host, app) {
   chk.append(el('div.two',
     el('div', el('h3', 'Checked on upload'), el('ul',
       el('li', 'Artwork: file type, size in pixels, shape (16:9 within 1%), file size.'),
-      el('li', 'Film: MP4 container, H.264 video, AAC audio, picture size, length, file size, bitrate, whether there is a sound track, index at the front (fast start), and that this browser can decode the first moments.'),
+      el('li', 'Film: MP4 container, H.264 or HEVC (hvc1) video, AAC audio, picture size, length, file size, bitrate, whether there is a sound track, index at the front (fast start), and that this browser can decode the first moments (a browser without HEVC checks the structure only).'),
       el('li', 'Before publishing: every finished page has at least one slide, a title, a description and a strip photo; every film has a poster; a background film is silent; nothing over the page limits.'))),
     el('div', el('h3', 'Checked by eye'), el('ul',
       el('li', 'Whether words sit inside the safe margins and out of the top band: switch on "Safe area" above the TV preview.'),

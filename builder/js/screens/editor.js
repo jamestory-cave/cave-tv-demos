@@ -351,6 +351,7 @@ export function mount(host, app, params) {
       box.append(el('p.small.muted', 'No background film. The page shows its photo behind the words.'));
       box.append(el('button.btn.sm', { type: 'button', onclick: () => pickFilm(app, { silentOnly: true, onPick: (src, rec) => { commit('Add background film', (pg) => { pg.backgroundFilm = { film: src, poster: rec.poster || undefined }; }); renderSide(); } }) }, '+ Choose a silent film'));
       box.append(el('p.help', { style: { marginTop: '10px' } }, 'A short silent loop (8 to 20 seconds that ends where it starts) drawn in place of the page photo while the page is open. The TV falls back to the poster, or the page photo, until the film has downloaded or when the guest has Reduce Motion on. The preview shows the poster with a "loops silently" label; it never plays video.'));
+      box.append(el('p.help', 'On the TV the text fades after 6 seconds so the film shows through; Select on text hides it at once; any press brings it back.'));
       return;
     }
     box.append(filmRow(bg, 0, 'backgroundFilm', 'background film'));
@@ -358,6 +359,7 @@ export function mount(host, app, params) {
       el('button.btn.sm', { type: 'button', onclick: () => pickFilm(app, { silentOnly: true, onPick: (src, rec) => commit('Change background film', (pg) => { pg.backgroundFilm = { film: src, poster: rec.poster || undefined }; }) }) }, 'Choose another'),
       el('button.btn.sm.danger', { type: 'button', onclick: () => removeWithUndo('background film', (pg) => { const b = pg.backgroundFilm; delete pg.backgroundFilm; return b; }, (pg, v) => { pg.backgroundFilm = v; }) }, 'Remove')));
     box.append(el('p.help', { style: { marginTop: '10px' } }, 'Loops silently behind the page. Films with a sound track are held back unless marked as silent in Media.'));
+    box.append(el('p.help', 'On the TV the text fades after 6 seconds so the film shows through; Select on text hides it at once; any press brings it back.'));
   }
 
   function renderSlides(box, p) {

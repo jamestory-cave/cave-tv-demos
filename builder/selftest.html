@@ -43,7 +43,8 @@ import { encodeQR, qrSVG } from './js/preview/qr.js';
 import { threeWayMerge } from './js/merge.js';
 import { probeMP4 } from './js/mp4.js';
 import { renderPage } from './js/preview/pages.js';
-import { parseMediaPath, shapeOf, slideProblem, prepareSlide, slidePathFor, MediaRegistry } from './js/media.js';
+import { TVPreview } from './js/preview/stage.js';
+import { parseMediaPath, shapeOf, slideProblem, prepareSlide, slidePathFor, MediaRegistry, filmRules, filmPath } from './js/media.js';
 import { postersIn } from './js/stores/github.js';
 import { mediaPathsIn } from './js/bundle.js';
 
@@ -354,6 +355,71 @@ async function run() {
     const pr2 = probeMP4(hevc.buffer);
     check('MP4 probe spots HEVC, no audio track, and an index at the end', pr2.video?.codec === 'hvc1' && pr2.audio === null && pr2.moovFirst === false);
     check('MP4 probe spots a QuickTime brand', probeMP4(new Uint8Array(box('ftyp', [...enc.encode('qt  ')], u32(0))).buffer).isQuickTime === true);
+
+    // Film rules (1 Oct 2026): HEVC hvc1 and 4K accepted, hev1 refused, non-AAC sound refused, 4K path ends -2160.mp4.
+    const fr_mkFilm = (vcodec, w, h, acodec) => new Uint8Array([...box('ftyp', [...enc.encode('isom')], u32(512)), ...box('moov', mvhd, trak('vide', box(vcodec, zeros(6), [0, 1], zeros(16), w16(w), w16(h), zeros(50)), w, h), ...(acodec ? [trak('soun', box(acodec, zeros(6), [0, 1], zeros(8), w16(2), w16(16), zeros(4), u32(48000 << 16)), 0, 0)] : [])), ...box('mdat', zeros(16))]);
+    const fr_facts4k = { bytes: 50 * 1048576, width: 3840, height: 2160, seconds: 20, hash: '9c1d9c1d9c1d' };
+    const fr_r4k = filmRules(probeMP4(fr_mkFilm('hvc1', 3840, 2160, 'mp4a').buffer), fr_facts4k);
+    check('An HEVC film tagged hvc1 is accepted', !fr_r4k.error && fr_r4k.hevc === true, fr_r4k.error);
+    check('A 3840 x 2160 film is accepted and gets the path media/<hash>-2160.mp4', !fr_r4k.error && fr_r4k.path === 'media/9c1d9c1d9c1d-2160.mp4' && filmPath('9c1d9c1d9c1d', 2160) === 'media/9c1d9c1d9c1d-2160.mp4' && parseMediaPath('media/9c1d9c1d9c1d-2160.mp4')?.height === 2160, fr_r4k.path);
+    const fr_rHev1 = filmRules(probeMP4(fr_mkFilm('hev1', 3840, 2160, 'mp4a').buffer), fr_facts4k);
+    check('An HEVC film tagged hev1 is refused with a message to re-export as hvc1', /hev1/.test(fr_rHev1.error || '') && /hvc1/.test(fr_rHev1.error) && /Media Encoder/.test(fr_rHev1.error), fr_rHev1.error);
+    const fr_r1080hevc = filmRules(probeMP4(fr_mkFilm('hvc1', 1920, 1080, 'mp4a').buffer), { bytes: 30 * 1048576, width: 1920, height: 1080, seconds: 42, hash: '9c1d9c1d9c1d' });
+    check('HEVC at 1920 x 1080 is accepted too, path -1080.mp4', !fr_r1080hevc.error && fr_r1080hevc.path === 'media/9c1d9c1d9c1d-1080.mp4', fr_r1080hevc.error);
+    const fr_r4kH264 = filmRules(probeMP4(fr_mkFilm('avc1', 3840, 2160, 'mp4a').buffer), fr_facts4k);
+    check('4K as H.264 is accepted with a warning recommending HEVC', !fr_r4kH264.error && fr_r4kH264.warnings.some((w) => /HEVC/.test(w)), JSON.stringify(fr_r4kH264));
+    const fr_rPCM = filmRules(probeMP4(fr_mkFilm('avc1', 1920, 1080, 'lpcm').buffer), { bytes: 30 * 1048576, width: 1920, height: 1080, seconds: 42 });
+    check('A PCM (AIFF) sound track is refused with the exact AAC message', fr_rPCM.error === 'The sound track is PCM; the TV needs AAC. In Media Encoder set Audio to AAC, 192 kb/s.', fr_rPCM.error);
+    const fr_rProRes = filmRules(probeMP4(fr_mkFilm('apch', 1920, 1080, 'mp4a').buffer), { bytes: 30 * 1048576, width: 1920, height: 1080, seconds: 42 });
+    check('ProRes is still refused; other sizes still refused; 60 MB still the cap', /ProRes.*cannot play/.test(fr_rProRes.error || '') && /1920 × 1080 or 3840 × 2160/.test(filmRules(probeMP4(fr_mkFilm('hvc1', 2560, 1440, 'mp4a').buffer), { ...fr_facts4k, width: 2560, height: 1440 }).error || '') && /60 MB or less/.test(filmRules(probeMP4(fr_mkFilm('hvc1', 3840, 2160, 'mp4a').buffer), { ...fr_facts4k, bytes: 61 * 1048576 }).error || '') && /GitHub/.test(filmRules(probeMP4(fr_mkFilm('hvc1', 3840, 2160, 'mp4a').buffer), { ...fr_facts4k, bytes: 61 * 1048576 }).error || ''));
+
+    // Background film in the preview's remote mode (1 Oct 2026): text fades after the idle time, any press restores,
+    // Select on text hides at once, Esc while faded restores and a second Esc goes back. Pages without a film never fade.
+    {
+      const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+      const host = document.createElement('div');
+      host.style.cssText = 'position:absolute;left:-6000px;top:0;width:960px';
+      document.body.append(host);
+      const bgDoc = clone(published.bundle);
+      findIn(bgDoc, 'firepit').page.backgroundFilm = { film: 'media/eeeeeeeeeeee-1080.mp4', poster: 'media/ffffffffffff-1920.jpg' };
+      const pv = new TVPreview(host, { media: { url: () => null }, logoURL: '' });
+      pv.fadeAfterMs = 80;
+      pv.setDoc(bgDoc);
+      pv.setMode('remote');
+      pv.showPage('firepit');
+      pv.focusEntry();
+      const stopsOnFirepit = pv.stops().map((x) => x.dataset.stop);
+      await pause(200);
+      const fadedAfterIdle = pv.faded && pv.stage.classList.contains('text-faded');
+      pv.key('enter');
+      const selectOnlyRestores = !pv.faded && pv.pageOnShow?.id === 'firepit' && !pv.playing;
+      await pause(200);
+      const fadedAgain = pv.faded;
+      const stopBefore = pv.nav.stop;
+      pv.key('down');
+      const moveRestoresAndActs = !pv.faded && (pv.nav.stop !== stopBefore || pv.nav.focus !== 'page' || stopsOnFirepit.length < 2);
+      pv.nav.focus = 'page'; pv.nav.stop = stopsOnFirepit.includes('body') ? 'body' : stopsOnFirepit.includes('facts') ? 'facts' : 'hours'; pv.applyFocus();
+      pv.key('enter');
+      const selectOnTextHides = pv.faded && pv.pageOnShow?.id === 'firepit';
+      pv.key('back');
+      const firstEscRestores = !pv.faded && pv.pageOnShow?.id === 'firepit';
+      pv.key('back');
+      const secondEscGoesBack = pv.pageOnShow?.id !== 'firepit';
+      pv.showPage('firepit'); pv.focusEntry();
+      pv.key('up'); pv.key('up'); // reach Back, then Select on Back is not a text stop
+      pv.setMode('edit');
+      await pause(200);
+      const noFadeInEdit = !pv.faded;
+      pv.setMode('remote');
+      const noFilm = bgDoc.home.children.flatMap((s) => [s, ...(s.children || [])]).find((p) => p.id !== 'firepit' && !p.backgroundFilm && p.type !== 'hub' && p.type !== 'finished');
+      pv.showPage(noFilm.id); pv.focusEntry();
+      await pause(200);
+      const noFilmNoFade = !pv.faded;
+      pv.destroy(); host.remove();
+      check('Preview remote mode: text fades after the idle time on a page with a background film; Select only restores', fadedAfterIdle && selectOnlyRestores, JSON.stringify({ fadedAfterIdle, selectOnlyRestores, stopsOnFirepit }));
+      check('Preview remote mode: a move while faded restores and acts; Select on text hides at once', fadedAgain && moveRestoresAndActs && selectOnTextHides, JSON.stringify({ fadedAgain, moveRestoresAndActs, selectOnTextHides }));
+      check('Preview remote mode: Esc while faded restores, a second Esc goes back; no fade in edit mode or without a film', firstEscRestores && secondEscGoesBack && noFadeInEdit && noFilmNoFade, JSON.stringify({ firstEscRestores, secondEscGoesBack, noFadeInEdit, noFilmNoFade, noFilm: noFilm?.id }));
+    }
 
     // QA2-2: stage-2 fields on page types the contract does not allow are left out of the bundle and warned about.
     {
