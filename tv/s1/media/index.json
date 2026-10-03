@@ -461,6 +461,19 @@
       "bytes": 1871823,
       "addedAt": "2026-09-30T11:38:41Z",
       "by": "Rhys"
+    },
+    "3ce7f07113e1": {
+      "name": "Poster: VOICEOVER TEST AI VOICE",
+      "width": 1920,
+      "height": 1080,
+      "sizes": [
+        800,
+        1920
+      ],
+      "bytes": 173744,
+      "addedAt": "2026-10-03T08:15:34Z",
+      "by": "Rhys",
+      "poster": true
     }
   },
   "films": {
@@ -491,6 +504,21 @@
       "silent": false,
       "poster": "media/081249737b96-1920.jpg",
       "addedAt": "2026-09-30T10:29:42Z",
+      "by": "Rhys"
+    },
+    "39c3a4164787": {
+      "name": "VOICEOVER TEST AI VOICE",
+      "width": 1920,
+      "height": 1080,
+      "seconds": 47.5,
+      "bytes": 30836107,
+      "mbps": 5.2,
+      "codec": "avc1",
+      "audio": true,
+      "audioCodec": "mp4a",
+      "silent": false,
+      "poster": "media/3ce7f07113e1-1920.jpg",
+      "addedAt": "2026-10-03T08:15:34Z",
       "by": "Rhys"
     }
   }
