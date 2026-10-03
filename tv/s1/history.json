@@ -1,5 +1,19 @@
 [
   {
+    "revision": 12,
+    "bundle": "bundles/12-876e834e.json",
+    "publishedAt": "2026-10-03T08:46:48Z",
+    "by": "Rhys",
+    "summary": [
+      "Pool, Gym & Treatments › In Room Treatments: Text changed (329 characters)",
+      "Pool, Gym & Treatments › In Room Treatments: Fact 1: One thing worth knowing → Please have your reservation confirmati…",
+      "Pool, Gym & Treatments › In Room Treatments: Fact 2: Another → Contact Sarah on 07939 208662 to make a…",
+      "Golf › The Course: Small caps line: \"18 holes\" → \"18 Hole Championship\"",
+      "Explore Kent: Faversham: photo changed",
+      "Explore Kent: Cave Landjet & car hire: photo changed"
+    ]
+  },
+  {
     "revision": 11,
     "bundle": "bundles/11-6741ddeb.json",
     "publishedAt": "2026-10-03T08:24:50Z",
