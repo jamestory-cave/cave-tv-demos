@@ -1,5 +1,14 @@
 [
   {
+    "revision": 21,
+    "bundle": "bundles/21-2c22da81.json",
+    "publishedAt": "2026-10-13T12:51:36Z",
+    "by": "Rhys",
+    "summary": [
+      "Eat & Drink › The Firepit: Text changed (250 characters)"
+    ]
+  },
+  {
     "revision": 20,
     "bundle": "bundles/20-8cc8c92d.json",
     "publishedAt": "2026-10-13T12:51:00Z",
@@ -223,15 +232,6 @@
     "by": "test 1",
     "summary": [
       "Your Room › The Penthouse › Savant: New venue page"
-    ]
-  },
-  {
-    "revision": 1,
-    "bundle": "bundles/1-f204ec01.json",
-    "publishedAt": "2026-09-30T00:41:07Z",
-    "by": "seed.py",
-    "summary": [
-      "First publish, seeded from the app's built-in content"
     ]
   }
 ]
