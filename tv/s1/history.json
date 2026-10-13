@@ -1,5 +1,19 @@
 [
   {
+    "revision": 15,
+    "bundle": "bundles/15-3688ae87.json",
+    "publishedAt": "2026-10-13T11:39:26Z",
+    "by": "Rhys",
+    "summary": [
+      "Your Room - The Penthouse › The Penthouse › Savant: Small caps line: \"Room Automation\" → \"SMART ENTERTAINMENT\"",
+      "Your Room - The Penthouse › The Penthouse › Savant: Subtitle: \"One line that sums it up\" → \"Entertainment at your fingertips.\"",
+      "Your Room - The Penthouse › The Penthouse › Savant: Text changed (127 characters)",
+      "Your Room - The Penthouse › The Penthouse › Savant: New fact: TV CONTROL : Control the Penthouse TV from the Savant syste…",
+      "Your Room - The Penthouse › The Penthouse › Savant: New fact: AUDIO CONTROL : Manage the room’s audio from the same syste…",
+      "Your Room - The Penthouse › The Penthouse › Savant: Fact removed: this is the first page we have made"
+    ]
+  },
+  {
     "revision": 14,
     "bundle": "bundles/14-7abdde22.json",
     "publishedAt": "2026-10-13T11:27:18Z",
