@@ -1,5 +1,18 @@
 [
   {
+    "revision": 22,
+    "bundle": "bundles/22-48e8237a.json",
+    "publishedAt": "2026-10-13T13:04:51Z",
+    "by": "Rhys",
+    "summary": [
+      "Eat & Drink › Breakfast: Text changed (198 characters)",
+      "Eat & Drink › Breakfast: Row removed: Weekdays",
+      "Eat & Drink › Breakfast: Row removed: Weekends",
+      "Eat & Drink › Breakfast: QR link added",
+      "Eat & Drink › Breakfast: Part removed: To order"
+    ]
+  },
+  {
     "revision": 21,
     "bundle": "bundles/21-2c22da81.json",
     "publishedAt": "2026-10-13T12:51:36Z",
@@ -223,15 +236,6 @@
       "Your Room › The Penthouse › Savant: Background film added",
       "Eat & Drink › Korean Cowgirl › The Korean Cowgirl Menu: New menu page",
       "Pool, Gym & Treatments: Background film added"
-    ]
-  },
-  {
-    "revision": 2,
-    "bundle": "bundles/2-dd6996b4.json",
-    "publishedAt": "2026-09-30T03:34:34Z",
-    "by": "test 1",
-    "summary": [
-      "Your Room › The Penthouse › Savant: New venue page"
     ]
   }
 ]
