@@ -1,5 +1,15 @@
 [
   {
+    "revision": 24,
+    "bundle": "bundles/24-867a1c5d.json",
+    "publishedAt": "2026-10-13T13:10:19Z",
+    "by": "Rhys",
+    "summary": [
+      "Your Room - The Penthouse › The Penthouse › Private Dinning: Row removed: Open",
+      "Pool, Gym & Treatments › In Room Treatments: Row removed: Open"
+    ]
+  },
+  {
     "revision": 23,
     "bundle": "bundles/23-2d021511.json",
     "publishedAt": "2026-10-13T13:08:15Z",
@@ -224,18 +234,6 @@
       "Eat & Drink › The Korean Cowgirl › The Korean Cowgirl Menu: BLOOMING ONION: £10 → 10",
       "Eat & Drink › The Korean Cowgirl › The Korean Cowgirl Menu: Smokehouse BBQ Boards note: nothing →  enjoy a selection of our favourite mea…",
       "Eat & Drink › The Korean Cowgirl › The Korean Cowgirl Menu: New part: Korean Fried Chicken (3 dishes)"
-    ]
-  },
-  {
-    "revision": 4,
-    "bundle": "bundles/4-38688cf9.json",
-    "publishedAt": "2026-09-30T10:43:41Z",
-    "by": "Rhys",
-    "summary": [
-      "Eat & Drink › The Korean Cowgirl: Title: \"Korean Cowgirl\" → \"The Korean Cowgirl\"",
-      "Eat & Drink › The Korean Cowgirl › The Korean Cowgirl Menu: MINI (1 person): £38 → 38",
-      "Eat & Drink › The Korean Cowgirl › The Korean Cowgirl Menu: DIRTY (2 persons): £75 → 75",
-      "Eat & Drink › The Korean Cowgirl › The Korean Cowgirl Menu: LUDICROUS (4 persons): £130 → 130"
     ]
   }
 ]
