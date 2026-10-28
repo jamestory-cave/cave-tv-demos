@@ -1,5 +1,16 @@
 [
   {
+    "revision": 25,
+    "bundle": "bundles/25-0a1e3056.json",
+    "publishedAt": "2026-10-28T14:06:47Z",
+    "by": "Rhys",
+    "summary": [
+      "Your Room - The Penthouse: Breakfast: 7:00 – 11:45am → 6:00 – 11:45am",
+      "Your Room - The Penthouse › Learn about The Penthouse: Title: \"The Penthouse\" → \"Learn about The Penthouse\"",
+      "Your Room - The Penthouse › Learn about The Penthouse › Private Dinning: Fact 4: THE KOREAN COWGIRL TASTING MENU → THE KOREAN COWGIRL BBQ EXPERIENCE"
+    ]
+  },
+  {
     "revision": 24,
     "bundle": "bundles/24-867a1c5d.json",
     "publishedAt": "2026-10-13T13:10:19Z",
@@ -223,17 +234,6 @@
     "by": "Rhys",
     "summary": [
       "Pool, Gym & Treatments › Therapy Pool: New venue page"
-    ]
-  },
-  {
-    "revision": 5,
-    "bundle": "bundles/5-52e27189.json",
-    "publishedAt": "2026-09-30T11:01:27Z",
-    "by": "Rhys",
-    "summary": [
-      "Eat & Drink › The Korean Cowgirl › The Korean Cowgirl Menu: BLOOMING ONION: £10 → 10",
-      "Eat & Drink › The Korean Cowgirl › The Korean Cowgirl Menu: Smokehouse BBQ Boards note: nothing →  enjoy a selection of our favourite mea…",
-      "Eat & Drink › The Korean Cowgirl › The Korean Cowgirl Menu: New part: Korean Fried Chicken (3 dishes)"
     ]
   }
 ]
