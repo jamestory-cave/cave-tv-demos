@@ -1,5 +1,19 @@
 [
   {
+    "revision": 28,
+    "bundle": "bundles/28-2f2760e8.json",
+    "publishedAt": "2026-10-28T15:36:18Z",
+    "by": "Rhys",
+    "summary": [
+      "Eat & Drink › The Korean Cowgirl: New fact: True low and slow smoked BBQ",
+      "Eat & Drink › The Korean Cowgirl: New fact: Monthly Specials",
+      "Eat & Drink › The Korean Cowgirl: Fact removed: Smoked brisket, burnt ends and Korean fried chicken",
+      "Eat & Drink › The Korean Cowgirl: Fact removed: Signature cocktails until late",
+      "Eat & Drink › The Korean Cowgirl: Fact removed: Live DJ on Friday and Saturday nights",
+      "Golf › Driving Range: New venue page"
+    ]
+  },
+  {
     "revision": 27,
     "bundle": "bundles/27-781be3d8.json",
     "publishedAt": "2026-10-28T14:40:08Z",
@@ -242,15 +256,6 @@
     "by": "Rhys",
     "summary": [
       "Your Room - The Penthouse › Our Suites: Gallery: now 10 photos"
-    ]
-  },
-  {
-    "revision": 8,
-    "bundle": "bundles/8-ec13e5cf.json",
-    "publishedAt": "2026-09-30T11:24:25Z",
-    "by": "Rhys",
-    "summary": [
-      "Your Room - The Penthouse: Title: \"Your Room\" → \"Your Room - The Penthouse\""
     ]
   }
 ]
