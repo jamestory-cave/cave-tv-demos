@@ -1,5 +1,31 @@
 [
   {
+    "revision": 27,
+    "bundle": "bundles/27-781be3d8.json",
+    "publishedAt": "2026-10-28T14:40:08Z",
+    "by": "Rhys",
+    "summary": [
+      "Eat & Drink › The Firepit › Firepit Menu: Text changed (91 characters)",
+      "Eat & Drink › The Firepit › Firepit Menu: GARLIC & PARMESAN SOURDOUGH: added",
+      "Eat & Drink › The Firepit › Firepit Menu: VOODOO SHRIMP (2 PCS): added",
+      "Eat & Drink › The Firepit › Firepit Menu: SUGAR SNAP PEAS: added",
+      "Eat & Drink › The Firepit › Firepit Menu: ROASTED BUTTERNUT SQUASH: added",
+      "Eat & Drink › The Firepit › Firepit Menu: SEARED SCALLOPS (2 PCS): added",
+      "Eat & Drink › The Firepit › Firepit Menu: KOREAN BEEF SKEWERS (4 PCS): added",
+      "Eat & Drink › The Firepit › Firepit Menu: TEMPURA NOBASHI SHRIMP (4 PCS): added",
+      "Eat & Drink › The Firepit › Firepit Menu: Smoked bone marrow: taken off",
+      "Eat & Drink › The Firepit › Firepit Menu: Korean fried chicken: taken off",
+      "Eat & Drink › The Firepit › Firepit Menu: Burnt leek: taken off",
+      "Eat & Drink › The Firepit › Firepit Menu: New part: WOK (4 dishes)",
+      "Eat & Drink › The Firepit › Firepit Menu: New part: JOSPER CHARCOAL OVEN (6 dishes)",
+      "Eat & Drink › The Firepit › Firepit Menu: New part: VEGETABLES (4 dishes)",
+      "Eat & Drink › The Firepit › Firepit Menu: New part: COLD PLATES (3 dishes)",
+      "Eat & Drink › The Firepit › Firepit Menu: New part: TO FOLLOW (5 dishes)",
+      "Eat & Drink › The Firepit › Firepit Menu: Part removed: From the fire",
+      "Eat & Drink › The Firepit › Firepit Menu: Part removed: Sides"
+    ]
+  },
+  {
     "revision": 26,
     "bundle": "bundles/26-6f0b9da8.json",
     "publishedAt": "2026-10-28T14:10:38Z",
@@ -225,15 +251,6 @@
     "by": "Rhys",
     "summary": [
       "Your Room - The Penthouse: Title: \"Your Room\" → \"Your Room - The Penthouse\""
-    ]
-  },
-  {
-    "revision": 7,
-    "bundle": "bundles/7-38c1f1c8.json",
-    "publishedAt": "2026-09-30T11:21:03Z",
-    "by": "Rhys",
-    "summary": [
-      "Pool, Gym & Treatments › In Room Treatments: New venue page"
     ]
   }
 ]
