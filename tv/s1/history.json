@@ -1,5 +1,17 @@
 [
   {
+    "revision": 30,
+    "bundle": "bundles/30-6aec5628.json",
+    "publishedAt": "2026-10-28T15:45:51Z",
+    "by": "Rhys",
+    "summary": [
+      "What's On: Card removed: Oktoberfest at Cave",
+      "What's On: Card removed: Dinner, Bed & Breakfast offer",
+      "Explore Kent: New card: Cave Landjet & Car hire",
+      "Explore Kent: Card removed: Cave Landjet & car hire"
+    ]
+  },
+  {
     "revision": 29,
     "bundle": "bundles/29-a6da7847.json",
     "publishedAt": "2026-10-28T15:43:26Z",
@@ -248,15 +260,6 @@
     "by": "Rhys",
     "summary": [
       "Pool, Gym & Treatments › Therapy Pool: Photo frames: now 2 (fill, fill)"
-    ]
-  },
-  {
-    "revision": 10,
-    "bundle": "bundles/10-3aac5830.json",
-    "publishedAt": "2026-10-03T08:15:34Z",
-    "by": "Rhys",
-    "summary": [
-      "Your Room - The Penthouse: Film added: VOICEOVER TEST AI VOICE (48 s)"
     ]
   }
 ]
