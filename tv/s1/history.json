@@ -1,5 +1,14 @@
 [
   {
+    "revision": 32,
+    "bundle": "bundles/32-50b90707.json",
+    "publishedAt": "2026-11-09T20:30:41Z",
+    "by": "Rhys",
+    "summary": [
+      "Explore Kent: Photo changed"
+    ]
+  },
+  {
     "revision": 31,
     "bundle": "bundles/31-12187ae6.json",
     "publishedAt": "2026-11-09T20:29:58Z",
@@ -249,20 +258,6 @@
       "Eat & Drink › The Korean Cowgirl › The Korean Cowgirl Menu: New part: Bit on the side? (9 dishes)",
       "Eat & Drink › The Korean Cowgirl › The Korean Cowgirl Menu: New part: Cowgirl Ramens (6 dishes)",
       "Eat & Drink › The Korean Cowgirl › The Korean Cowgirl Menu: New part: Shakes (4 dishes)"
-    ]
-  },
-  {
-    "revision": 12,
-    "bundle": "bundles/12-876e834e.json",
-    "publishedAt": "2026-10-03T08:46:48Z",
-    "by": "Rhys",
-    "summary": [
-      "Pool, Gym & Treatments › In Room Treatments: Text changed (329 characters)",
-      "Pool, Gym & Treatments › In Room Treatments: Fact 1: One thing worth knowing → Please have your reservation confirmati…",
-      "Pool, Gym & Treatments › In Room Treatments: Fact 2: Another → Contact Sarah on 07939 208662 to make a…",
-      "Golf › The Course: Small caps line: \"18 holes\" → \"18 Hole Championship\"",
-      "Explore Kent: Faversham: photo changed",
-      "Explore Kent: Cave Landjet & car hire: photo changed"
     ]
   }
 ]
