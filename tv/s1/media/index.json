@@ -583,6 +583,30 @@
       "bytes": 2287961,
       "addedAt": "2026-10-28T15:36:18Z",
       "by": "Rhys"
+    },
+    "280e51cd5f47": {
+      "name": "canterbury cathedral",
+      "width": 2382,
+      "height": 1336,
+      "sizes": [
+        800,
+        1920
+      ],
+      "bytes": 5767381,
+      "addedAt": "2026-11-09T20:29:58Z",
+      "by": "Rhys"
+    },
+    "7ea3f81a7ff9": {
+      "name": "Whitstable at Dusk",
+      "width": 2044,
+      "height": 1376,
+      "sizes": [
+        800,
+        1920
+      ],
+      "bytes": 3206778,
+      "addedAt": "2026-11-09T20:29:58Z",
+      "by": "Rhys"
     }
   },
   "films": {

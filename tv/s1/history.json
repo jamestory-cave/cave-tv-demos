@@ -1,5 +1,17 @@
 [
   {
+    "revision": 31,
+    "bundle": "bundles/31-12187ae6.json",
+    "publishedAt": "2026-11-09T20:29:58Z",
+    "by": "Rhys",
+    "summary": [
+      "Your Room - The Penthouse › Learn about The Penthouse › Private Dining: Title: \"Private Dinning\" → \"Private Dining\"",
+      "Explore Kent: Photo changed",
+      "Explore Kent: Canterbury Cathedral: photo changed",
+      "Explore Kent: Whitstable: photo changed"
+    ]
+  },
+  {
     "revision": 30,
     "bundle": "bundles/30-6aec5628.json",
     "publishedAt": "2026-10-28T15:45:51Z",
@@ -251,15 +263,6 @@
       "Golf › The Course: Small caps line: \"18 holes\" → \"18 Hole Championship\"",
       "Explore Kent: Faversham: photo changed",
       "Explore Kent: Cave Landjet & car hire: photo changed"
-    ]
-  },
-  {
-    "revision": 11,
-    "bundle": "bundles/11-6741ddeb.json",
-    "publishedAt": "2026-10-03T08:24:50Z",
-    "by": "Rhys",
-    "summary": [
-      "Pool, Gym & Treatments › Therapy Pool: Photo frames: now 2 (fill, fill)"
     ]
   }
 ]
