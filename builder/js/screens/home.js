@@ -6,6 +6,7 @@ import { pageStatus } from '../changes.js';
 import { LIMITS } from '../validate.js';
 import { toast, modal, confirmModal, promptModal, sortable, textField, uid } from '../ui.js';
 import { TVPreview } from '../preview/stage.js';
+import { moveModal } from './move.js';
 
 const STATUS = { live: 'Live', changed: 'Changed', new: 'New', hidden: 'Hidden' };
 
@@ -132,6 +133,7 @@ export function mount(host, app, params) {
     if (page.id !== 'home') {
       ops.append(el('button.btn', { type: 'button', onclick: () => toggleHidden(page.id) }, page.hidden ? 'Show to guests' : 'Hide from guests'));
       ops.append(el('button.btn', { type: 'button', onclick: () => rename(page.id) }, 'Rename'));
+      ops.append(el('button.btn', { type: 'button', onclick: () => moveModal(app, page.id, { onMoved: () => select(page.id) }) }, 'Move to…'));
       if (e.depth <= 2) ops.append(el('button.btn', { type: 'button', onclick: () => addModal(page.id) }, 'Add page under it'));
       ops.append(el('button.btn.danger', { type: 'button', onclick: () => remove(page.id) }, 'Delete'));
     }

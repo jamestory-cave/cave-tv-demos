@@ -13,6 +13,8 @@ export const LIMITS = {
   // Stage 2: photo frames, films, finished pages.
   caption: 60, photosMax: 6, filmTitle: 40, filmsMax: 4, description: 160, slidesMax: 10,
   backgroundFilmBytes: 15 * 1024 * 1024,   // a warning; 60 MB stays the hard limit for every film
+  // Rhys's requests, 9 Nov 2026 (docs/builder/2026-11-rhys-requests.md).
+  hoursTitle: 24, childrenTitle: 40,
   // A full-screen photo needs 1920 on its long edge and 1080 on its short
   // edge (portrait photos are fine: the TV crops them). Cards need 800.
   imageMinLong: 1920, imageMinShort: 1080, cardImageMinLong: 800,
@@ -83,7 +85,8 @@ export function validatePage(page, ctx = {}) {
   if (!page.title || !page.title.trim()) block('title', 'No title');
   text('title', page.title, LIMITS.title, 'Title');
   // Stage-2 fields on a page type that cannot show them (hand-edited drafts): left out of the bundle, said here.
-  const LABEL = { photos: 'photo frames', films: 'films', backgroundFilm: 'a background film', slides: 'slides', description: 'a description' };
+  const LABEL = { photos: 'photo frames', films: 'films', backgroundFilm: 'a background film', slides: 'slides', description: 'a description',
+    hoursTitle: 'an hours heading', childrenTitle: 'a heading above its pages' };
   for (const key of Object.keys(ALLOWS)) {
     const has = Array.isArray(page[key]) ? page[key].length > 0 : !!page[key];
     if (has && !ALLOWS[key].includes(page.type)) warn(key, `This page carries ${LABEL[key]}, which a ${page.type} page cannot show; they are left out when publishing`);
@@ -100,6 +103,8 @@ export function validatePage(page, ctx = {}) {
   (page.facts || []).forEach((f, i) => text(`facts.${i}`, f, LIMITS.fact, `Fact ${i + 1}`));
   if ((page.facts || []).length > LIMITS.factsMax) warn('facts', `More than ${LIMITS.factsMax} facts; the page gets long`);
 
+  text('hoursTitle', page.hoursTitle, LIMITS.hoursTitle, 'Hours heading');
+  text('childrenTitle', page.childrenTitle, LIMITS.childrenTitle, 'Heading above the pages inside');
   (page.hours || []).forEach((h, i) => {
     text(`hours.${i}.label`, h.label, LIMITS.hoursLabel, `Hours row ${i + 1} label`);
     text(`hours.${i}.value`, h.value, LIMITS.hoursValue, `Hours row ${i + 1}`);
@@ -132,8 +137,23 @@ export function validatePage(page, ctx = {}) {
     });
   });
 
-  (page.images || []).forEach((src, i) => photo(`images.${i}`, src, 'full', `Gallery photo ${i + 1}`));
-  if (page.type === 'gallery' && !(page.images || []).length) warn('images', 'This gallery has no photos yet');
+  const frames = page.type === 'gallery' ? galleryFrames(page) : null;
+  if (frames && (page.slides || []).length) {
+    // Photos and films (gallery slides). Fields stay under `images` so the editor's "Photos and films" part shows them.
+    frames.forEach((fr, i) => {
+      const f = `images.${i}`;
+      if (fr.film) {
+        filmChecks(fr, f, `Gallery film ${i + 1}`, { block, warn, text: null, imageKnown, imageSize, filmInfo });
+        const info = imageKnown(fr.film) ? filmInfo(fr.film) : null;
+        if (info && info.audio === true && !info.silent) block(f, `Gallery film ${i + 1} "${info.name}" has a sound track. Films in a gallery loop silently: use a silent export, or mark the film as silent in Media`);
+        if (info && info.audio === null && !info.silent) block(f, `The Builder cannot tell whether "${info.name}" has sound. Mark it as silent in Media to use it in a gallery`);
+        if (info && info.bytes > LIMITS.backgroundFilmBytes) warn(f, `Gallery film ${i + 1} is ${Math.round(info.bytes / 1048576)} MB. Loops should be under 15 MB so every TV downloads them quickly`);
+      } else if (fr.image) photo(f, fr.image, 'full', `Gallery photo ${i + 1}`);
+      else block(f, `Gallery frame ${i + 1} has no photo or film`);
+    });
+  } else (page.images || []).forEach((src, i) => photo(`images.${i}`, src, 'full', `Gallery photo ${i + 1}`));
+  if (frames && !frames.length) warn('images', 'This gallery has no photos or films yet');
+  if (frames && frames.length > LIMITS.galleryMax) block('images', `${frames.length} photos and films; the limit is ${LIMITS.galleryMax} a gallery`);
 
   (page.items || []).forEach((it, i) => {
     const f = `items.${i}`;
@@ -144,6 +164,11 @@ export function validatePage(page, ctx = {}) {
     text(`${f}.meta`, it.meta, LIMITS.cardMeta, `Card "${it.title || ''}" date or distance`);
     if (it.image) photo(`${f}.image`, it.image, 'card', `Photo on card "${it.title}"`);
     else warn(`${f}.image`, `Card "${it.title || i + 1}" has no photo`);
+    if (it.qr && (it.qr.label || it.qr.url)) {   // both emptied: left out when publishing, nothing to check
+      text(`${f}.qr.label`, it.qr.label, LIMITS.qrLabel, `QR line on card "${it.title || i + 1}"`);
+      if (!validQR(it.qr.url)) block(`${f}.qr.url`, `The QR web address on card "${it.title || i + 1}" is not valid (it should start with https://)`);
+      if (!it.qr.label) warn(`${f}.qr.label`, `The QR code on card "${it.title || i + 1}" has no line saying what it does`);
+    }
   });
 
   const allowed = (key) => ALLOWS[key].includes(page.type);
@@ -238,13 +263,19 @@ export function hasStop(page) {
   switch (page.type) {
     case 'home': case 'hub': return kids.length > 0 || extras;
     case 'contact': return true;
-    case 'gallery': return (page.images || []).length > 0;
-    case 'list': return (page.items || []).length > 0 || extras;
+    case 'gallery': return galleryFrames(page).length > 0;
+    case 'list': return (page.items || []).length > 0 || extras || !!page.qr;   // the QR card is a stop on a list with nothing else (StripsModel)
     case 'menu': return (page.sections || []).some((s) => (s.items || []).some((d) => !d.hidden)) || (page.hours || []).length > 0 || !!page.qr || extras;
     case 'info': return !!page.body || (page.facts || []).length > 0 || kids.length > 0 || (page.hours || []).length > 0 || !!page.qr || extras;
     case 'finished': return (page.slides || []).length > 0;
     default: return false;
   }
+}
+
+/** A gallery's frames: its slides (photos and films) when it has any, else its photos. */
+export function galleryFrames(page) {
+  if ((page.slides || []).length) return page.slides;
+  return (page.images || []).map((image) => ({ image }));
 }
 
 export function validateHotel(hotel) {

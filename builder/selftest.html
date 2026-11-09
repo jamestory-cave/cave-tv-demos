@@ -34,16 +34,16 @@ window.addEventListener('error', (e) => { const d = document.createElement('div'
 <script type="module">
 import { config } from './config.js';
 import { canonical, clone, utf8ToBase64 } from './js/util.js';
-import { model, movePage, removePage, addPage, findIn } from './js/model.js';
+import { model, movePage, removePage, addPage, findIn, newPage, reparentPage, moveTargets } from './js/model.js';
 import { buildBundle, bundleText } from './js/bundle.js';
 import { describeChanges } from './js/changes.js';
-import { validateAll } from './js/validate.js';
+import { validateAll, hasStop } from './js/validate.js';
 import { GitHubStore } from './js/stores/github.js';
 import { encodeQR, qrSVG } from './js/preview/qr.js';
 import { threeWayMerge } from './js/merge.js';
 import { probeMP4 } from './js/mp4.js';
-import { renderPage } from './js/preview/pages.js';
-import { TVPreview } from './js/preview/stage.js';
+import { renderPage, listQRFor, hoursHeading } from './js/preview/pages.js';
+import { TVPreview, hasOwnContent } from './js/preview/stage.js';
 import { parseMediaPath, shapeOf, slideProblem, prepareSlide, slidePathFor, MediaRegistry, filmRules, filmPath } from './js/media.js';
 import { postersIn } from './js/stores/github.js';
 import { mediaPathsIn } from './js/bundle.js';
@@ -85,9 +85,12 @@ async function run() {
   check('No changes listed straight after loading', describeChanges(published.bundle, model.draft).entries.length === 0);
 
   // 2. Change a price.
-  model.commit('price', (d) => { findIn(d, 'firepit-menu').page.sections[0].items[0].price = '£14'; });
+  // Worked out from the published content, so the check holds whatever the dish is called today.
+  const dish0 = findIn(published.bundle, 'firepit-menu').page.sections[0].items[0];
+  const newPrice = dish0.price === '£14' ? '£15' : '£14';
+  model.commit('price', (d) => { findIn(d, 'firepit-menu').page.sections[0].items[0].price = newPrice; });
   let ch = describeChanges(published.bundle, model.draft);
-  check('Price change is listed in plain English', ch.summary.some((s) => /Firepit Menu: Smoked bone marrow: £12 → £14/.test(s)), ch.summary.join(' | '));
+  check('Price change is listed in plain English', ch.summary.some((s) => s.endsWith(`Firepit Menu: ${dish0.name}: ${dish0.price || 'nothing'} → ${newPrice}`)), ch.summary.join(' | '));
 
   // 3. Reorder two sections; still listed when a section is added or removed as well (QA-3).
   model.commit('reorder', (d) => movePage(d, 'home', 0, 1));
@@ -101,9 +104,10 @@ async function run() {
   ch = describeChanges(published.bundle, model.draft);
   check('Reorder is still listed after a section is deleted (QA-3)', ch.summary.some((s) => /^Home: Order is now:/.test(s)) && ch.summary.some((s) => /Explore Kent: Deleted/.test(s)));
   model.undo();
+  const fact1 = findIn(published.bundle, 'golf').page.facts[1];
   model.commit('fact', (d) => { findIn(d, 'golf').page.facts[1] = 'Club hire, buggies and trolleys'; });
   ch = describeChanges(published.bundle, model.draft);
-  check('A changed fact is named (QA-7)', ch.summary.some((s) => /Golf: Fact 2: Club hire and buggies available → Club hire, buggies and trolleys/.test(s)), ch.summary.find((s) => /Fact/.test(s)));
+  check('A changed fact is named (QA-7)', ch.summary.some((s) => s.endsWith(`Golf: Fact 2: ${fact1.length > 40 ? fact1.slice(0, 39) + '…' : fact1} → Club hire, buggies and trolleys`)), ch.summary.find((s) => /Fact/.test(s)));
   model.undo();
 
   // 4. Hide The Deck.
@@ -266,7 +270,9 @@ async function run() {
     model.load({ ...published, bundle: base }, null);
     const sizes = { 'media/aaaaaaaaaaaa-1920.jpg': { width: 900, height: 200 }, 'media/bbbbbbbbbbbb-1920.jpg': { width: 2400, height: 1600 }, 'media/dddddddddddd-1920.jpg': { width: 1920, height: 1080 }, 'media/ffffffffffff-1920.jpg': { width: 1920, height: 1080 }, 'media/111111111111-1920.jpg': { width: 3840, height: 2160 }, 'media/222222222222-1920.jpg': { width: 1920, height: 1080 } };
     const filmsInfo = { 'media/cccccccccccc-1080.mp4': { name: 'Lighting', width: 1920, height: 1080, seconds: 42, audio: true, silent: false }, 'media/eeeeeeeeeeee-1080.mp4': { name: 'Pool loop', width: 1920, height: 1080, seconds: 12, audio: false, silent: false } };
-    const ctx = { imageSize: (s) => sizes[s] || null, imageKnown: (s) => !parseMediaPath(s) || s in sizes || s in filmsInfo, filmInfo: (s) => filmsInfo[s] || null };
+    // Synthetic paths (a repeated hex digit) are known only when listed; real media in the published content counts as known.
+    const synthetic = (s) => /^media\/([0-9a-f])\1{11}-/.test(s || '');
+    const ctx = { imageSize: (s) => sizes[s] || null, imageKnown: (s) => !parseMediaPath(s) || !synthetic(s) || s in sizes || s in filmsInfo, filmInfo: (s) => filmsInfo[s] || null };
     const v9 = validateAll(model.draft, ctx);
     check('Stage-2 content with no problems has no blockers', ![...v9.values()].some((r) => r.blockers.length), [...v9].filter(([, r]) => r.blockers.length).map(([id, r]) => id + ': ' + r.blockers.map((b) => b.message).join('; ')).join(' | '));
     const b9 = buildBundle(model.draft, { revision: base.version, held: v9 }).bundle;
@@ -490,6 +496,145 @@ async function run() {
     model.load(published, null);
   }
 
+  // 10. Rhys's requests, 9 Nov 2026 (docs/builder/2026-11-rhys-requests.md).
+  {
+    model.load(published, null);
+    const build = () => buildBundle(model.draft, { revision: 99, held: validateAll(model.draft, { imageSize: () => null }) }).bundle;
+    const pageOut = (id) => findIn(build(), id)?.page;
+    const vOf = (id, ctx = { imageSize: () => null }) => validateAll(model.draft, ctx).get(id);
+    const layout = { width: 1600, contentWidth: 1456, showsChildren: true, fallbackKicker: null };
+    const fakeMedia = { url: () => null };
+
+    // 1. hoursTitle.
+    check('A new Venue page starts with no hours card (2, 3)', !('hours' in newPage('info', 'X', 'x-1')));
+    model.commit('Edit hours heading', (d) => { findIn(d, 'firepit').page.hoursTitle = 'Key times'; });
+    check('hoursTitle is published on a page with hours', pageOut('firepit').hoursTitle === 'Key times');
+    check('The change list names the hours heading', describeChanges(published.bundle, model.draft).summary.some((x) => /The Firepit: Hours heading: nothing → "Key times"/.test(x)), describeChanges(published.bundle, model.draft).summary.join(' | '));
+    check('The preview draws the hours heading in capitals; "OPENING HOURS" when empty', hoursHeading({ hoursTitle: 'Key times' }) === 'KEY TIMES' && hoursHeading({}) === 'OPENING HOURS' && hoursHeading({ hoursTitle: '   ' }) === 'OPENING HOURS'
+      && renderPage(findIn(model.draft, 'firepit').page, { hotel: {}, layout, media: fakeMedia }).node.querySelector('.tv-hours .tv-kicker').textContent === 'KEY TIMES');
+    model.commit('blank', (d) => { findIn(d, 'firepit').page.hoursTitle = '   '; });
+    check('A blank hours heading is left out', !('hoursTitle' in pageOut('firepit')));
+    model.commit('long', (d) => { findIn(d, 'firepit').page.hoursTitle = 'x'.repeat(25); });
+    check('An hours heading over 24 characters is a blocker', vOf('firepit').blockers.some((b) => b.field === 'hoursTitle'));
+    model.commit('remove card', (d) => { const p = findIn(d, 'firepit').page; p.hoursTitle = 'Key times'; delete p.hours; });
+    check('With no hours the heading is left out too, and the change list says the card went', !('hoursTitle' in pageOut('firepit')) && !('hours' in pageOut('firepit')) && describeChanges(published.bundle, model.draft).summary.some((x) => /The Firepit: Hours card removed/.test(x)));
+    model.load(published, null);
+
+    // 4. childrenTitle.
+    model.commit('Edit heading above pages', (d) => { findIn(d, 'golf').page.childrenTitle = 'The full experience'; findIn(d, 'roomservice').page.childrenTitle = 'Nothing inside'; });
+    check('childrenTitle is published on a page with pages inside; left out on one without', pageOut('golf').childrenTitle === 'The full experience' && !('childrenTitle' in pageOut('roomservice')));
+    const gpage = { id: 'g', type: 'gallery', title: 'G', images: ['hero-eat'], childrenTitle: 'The full experience', children: [{ id: 'k1', type: 'info', title: 'Kid' }] };
+    const gnode = renderPage(gpage, { hotel: {}, layout, media: fakeMedia }).node;
+    const kh = gnode.querySelector('.tv-kids-h'), kt = gnode.querySelector('[data-child="k1"]');
+    check('The preview draws the heading in capitals above the child tiles', kh?.textContent === 'THE FULL EXPERIENCE' && !!kt && (kh.compareDocumentPosition(kt) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0);
+    check('Every page type with tiles draws the heading', ['info', 'menu', 'list', 'contact', 'hub'].every((type) => renderPage({ id: 'p', type, title: 'P', body: 'x', facts: ['f'], items: [{ title: 'c' }], sections: [{ title: 's', items: [{ name: 'd' }] }], childrenTitle: 'Inside', children: [{ id: 'k1', type: 'info', title: 'Kid' }] }, { hotel: {}, layout, media: fakeMedia }).node.querySelector('.tv-kids-h')?.textContent === 'INSIDE'));
+    model.commit('hide kids', (d) => { for (const c of findIn(d, 'golf').page.children) c.hidden = true; });
+    check('With every page inside hidden, the heading is left out', !('childrenTitle' in pageOut('golf')));
+    model.undo();
+    model.commit('long', (d) => { findIn(d, 'golf').page.childrenTitle = 'x'.repeat(41); });
+    check('A heading above pages over 40 characters is a blocker', vOf('golf').blockers.some((b) => b.field === 'childrenTitle'));
+    model.load(published, null);
+
+    // 7. QR codes on list pages and on cards.
+    model.commit('card qr', (d) => { const p = findIn(d, 'whatson').page; p.items[0].qr = { label: 'Tickets', url: 'https://www.cavehotels.com/whats-on/' }; p.items[1].qr = { label: '', url: '' }; p.qr = { label: 'Everything on', url: 'https://www.cavehotels.com/' }; });
+    const wo = pageOut('whatson');
+    check('A card QR is published as {label, url}; an empty one is left out; the list page keeps its own QR', canonical(wo.items[0].qr) === canonical({ label: 'Tickets', url: 'https://www.cavehotels.com/whats-on/' }) && !('qr' in wo.items[1]) && wo.qr?.label === 'Everything on');
+    check('The change list names the card QR and the page QR', ['QR code added', 'QR link added'].every((t) => describeChanges(published.bundle, model.draft).summary.some((x) => x.includes("What's On") && x.includes(t))), describeChanges(published.bundle, model.draft).summary.filter((x) => x.includes("What's On")).join(' | '));
+    model.commit('bad', (d) => { findIn(d, 'whatson').page.items[0].qr.url = 'cavehotels'; });
+    check('An invalid card QR address is a blocker, like the page QR', vOf('whatson').blockers.some((b) => b.field === 'items.0.qr.url'));
+    model.undo();
+    const wp = findIn(model.draft, 'whatson').page;
+    check('The list QR follows the card: its own, else the page\'s', listQRFor(wp, 0).slot === 'card-0' && listQRFor(wp, 1).slot === 'page' && listQRFor(wp, -1).slot === 'page' && listQRFor({ items: [{ title: 'a' }] }, 0) === null);
+    const wnode = renderPage(wp, { hotel: {}, layout, media: fakeMedia }).node;
+    check('The preview draws one QR card beside the cards, showing the first card\'s', wnode.querySelectorAll('.tv-lqr [data-qrslot].on').length === 1 && wnode.querySelector('.tv-lqr [data-qrslot].on').dataset.qrslot === 'card-0' && !wnode.querySelector('.tv-lcard .tv-qr'));
+    check('A card QR with no address does not count; the page\'s shows instead (as the TV drops it)', listQRFor({ qr: { label: 'p', url: 'https://www.cavehotels.com/' }, items: [{ title: 'a', qr: { label: 'Tickets', url: '  ' } }] }, 0)?.slot === 'page');
+    const onlyQR = { id: 'q', type: 'list', title: 'Q', items: [], qr: { label: 'Book', url: 'https://www.cavehotels.com/' } };
+    const qnode = renderPage(onlyQR, { hotel: {}, layout, media: fakeMedia }).node;
+    check('A list with only a page QR has a stop and its own content, like the TV; its QR card is the stop', hasStop(onlyQR) && hasOwnContent(onlyQR) && qnode.querySelector('.tv-lqr [data-stop="qr"][data-entry]') !== null && !hasStop({ ...onlyQR, qr: undefined }));
+    check('The QR column is pinned beside a narrowed cards column (no stacked layout)', wnode.classList.contains('has-lqr') && !wnode.querySelector('.tv-columns') && wnode.querySelector('.tv-lqr').parentNode === wnode);
+    model.load(published, null);
+
+    // 5. Gallery frames: photos and silent films.
+    const fsizes = { 'media/aaaaaaaaaaaa-1920.jpg': { width: 1920, height: 1080 }, 'media/dddddddddddd-1920.jpg': { width: 1920, height: 1080 } };
+    const finfo = { 'media/cccccccccccc-1080.mp4': { name: 'Room tour', width: 1920, height: 1080, seconds: 20, audio: false, silent: false, bytes: 9e6 }, 'media/eeeeeeeeeeee-1080.mp4': { name: 'Loud', width: 1920, height: 1080, seconds: 20, audio: true, silent: false, bytes: 9e6 } };
+    const synthetic = (x) => /^media\/([0-9a-f])\1{11}-/.test(x || '');
+    const gctx = { imageSize: (x) => fsizes[x] || null, imageKnown: (x) => !synthetic(x) || x in fsizes || x in finfo, filmInfo: (x) => finfo[x] || null };
+    model.commit('frames', (d) => { const g = findIn(d, 'golf-gallery').page; g.slides = [{ image: 'media/aaaaaaaaaaaa-1920.jpg' }, { film: 'media/cccccccccccc-1080.mp4', poster: 'media/dddddddddddd-1920.jpg' }]; g.images = ['media/aaaaaaaaaaaa-1920.jpg', 'media/dddddddddddd-1920.jpg']; });
+    const gout = buildBundle(model.draft, { revision: 99, held: validateAll(model.draft, gctx) }).bundle;
+    const gg = findIn(gout, 'golf-gallery').page;
+    check('A gallery with a film publishes slides, and images holds every frame\'s still for older apps', canonical(gg.slides) === canonical([{ image: 'media/aaaaaaaaaaaa-1920.jpg' }, { film: 'media/cccccccccccc-1080.mp4', poster: 'media/dddddddddddd-1920.jpg' }]) && canonical(gg.images) === canonical(['media/aaaaaaaaaaaa-1920.jpg', 'media/dddddddddddd-1920.jpg']));
+    check('That gallery has no blockers', !validateAll(model.draft, gctx).get('golf-gallery').blockers.length, validateAll(model.draft, gctx).get('golf-gallery').blockers.map((b) => b.message).join('; '));
+    { const again = clone(published); again.bundle = gout; model.load(again, null); const rt = buildBundle(model.draft, { revision: 99, held: validateAll(model.draft, gctx) }).bundle; check('A gallery with film frames round-trips exactly', canonical(rt) === canonical(gout)); }
+    check('The change list describes the gallery\'s photos and films', describeChanges(published.bundle, model.draft).summary.some((x) => /The Course: Gallery: now 1 photo, 1 film/.test(x)), describeChanges(published.bundle, model.draft).summary.filter((x) => /Course/.test(x)).join(' | '));
+    const gn = renderPage(findIn(model.draft, 'golf-gallery').page, { hotel: {}, layout, media: fakeMedia }).node;
+    check('The preview shows a film frame with its "loops silently" label and a film mark on its thumbnail', gn.querySelectorAll('.tv-gphoto').length === 2 && !!gn.querySelector('.tv-gphoto[data-photo="1"] .tv-gfilm') && !!gn.querySelector('.tv-thumb.film .tv-film-mark'));
+    model.commit('no poster', (d) => { delete findIn(d, 'golf-gallery').page.slides[1].poster; });
+    check('A gallery film without a poster is a blocker', validateAll(model.draft, gctx).get('golf-gallery').blockers.some((b) => /poster/.test(b.message)));
+    model.undo();
+    model.commit('loud', (d) => { findIn(d, 'golf-gallery').page.slides[1].film = 'media/eeeeeeeeeeee-1080.mp4'; });
+    check('A gallery film with a sound track is a blocker', validateAll(model.draft, gctx).get('golf-gallery').blockers.some((b) => /sound track/.test(b.message)));
+    model.undo();
+    model.commit('photos only', (d) => { const g = findIn(d, 'golf-gallery').page; g.slides = [{ image: 'media/aaaaaaaaaaaa-1920.jpg' }]; });
+    const go2 = findIn(buildBundle(model.draft, { revision: 99, held: new Map() }).bundle, 'golf-gallery').page;
+    check('Frames that are all photos publish as plain images, as before', !('slides' in go2) && canonical(go2.images) === canonical(['media/aaaaaaaaaaaa-1920.jpg']));
+    model.load(published, null);
+
+    // 8. Move to…
+    const ids0 = model.pages().map((e) => e.page.id).sort().join();
+    const tg = moveTargets(model.draft, 'firepit').map((t) => t.id);
+    check('Move targets: Home and pages that can hold pages, never the page itself or anything inside it', tg.includes('home') && tg.includes('golf') && !tg.includes('firepit') && !tg.includes('firepit-menu'), tg.join(','));
+    model.commit('Move Room Service', (d) => reparentPage(d, 'roomservice', 'home'));
+    const rs = model.find('roomservice');
+    check('Moving a page to Home keeps its id and puts it last on Home', rs.parent.id === 'home' && model.draft.home.children[model.draft.home.children.length - 1].id === 'roomservice' && model.pages().map((e) => e.page.id).sort().join() === ids0);
+    check('The change list says where it moved from and to', describeChanges(published.bundle, model.draft).summary.some((x) => /Room Service: Moved from Eat & Drink to Home/.test(x)));
+    check('The published bundle has it on Home and not in Eat & Drink', build().home.children.some((c) => c.id === 'roomservice') && !findIn(build(), 'eat').page.children.some((c) => c.id === 'roomservice'));
+    model.undo();
+    check('One undo puts it back where it was', model.find('roomservice').parent.id === 'eat' && canonical(model.draft) === canonical(published.bundle));
+    let refused = 'x';
+    model.commit('bad move', (d) => { refused = reparentPage(d, 'eat', 'firepit'); });
+    check('A page cannot be moved inside itself', refused === null && model.find('eat').parent.id === 'home');
+    model.undo();
+    // A move made here survives someone else's newer publish.
+    {
+      const theirs = clone(published.bundle);
+      findIn(theirs, 'golf').page.subtitle = 'Changed by someone else';
+      const draft = clone(published.bundle);
+      reparentPage(draft, 'roomservice', 'home');
+      const r = threeWayMerge(published.bundle, theirs, draft);
+      check('Rebase carries a move onto a newer publish', findIn(r.doc, 'roomservice').parent.id === 'home' && findIn(r.doc, 'golf').page.subtitle === 'Changed by someone else' && !r.conflicts.length, r.conflicts.join(' | '));
+    }
+    // Move then delete the old parent: the moved page survives a rebase (reviewer note 1).
+    {
+      const theirs = clone(published.bundle);
+      findIn(theirs, 'golf').page.subtitle = 'Changed by someone else';
+      const draft = clone(published.bundle);
+      reparentPage(draft, 'firepit-menu', 'eat');
+      removePage(draft, 'firepit');
+      const r = threeWayMerge(published.bundle, theirs, draft);
+      const fm = findIn(r.doc, 'firepit-menu');
+      check('Rebase: a page moved out of a parent that was then deleted is kept, in its new place', !!fm && fm.parent.id === 'eat' && !findIn(r.doc, 'firepit') && findIn(r.doc, 'golf').page.subtitle === 'Changed by someone else', r.conflicts.join(' | '));
+      const draft2 = clone(published.bundle);
+      addPage(draft2, 'eat', { id: 'bars-test1', type: 'info', title: 'Bars', body: 'x', children: [] });
+      reparentPage(draft2, 'roomservice', 'bars-test1');
+      const r2 = threeWayMerge(published.bundle, theirs, draft2);
+      const ids2 = [];
+      (function walk(p) { ids2.push(p.id); (p.children || []).forEach(walk); })(r2.doc.home);
+      check('Rebase: a page moved into a new page appears once, inside it', ids2.filter((x) => x === 'roomservice').length === 1 && findIn(r2.doc, 'roomservice').parent.id === 'bars-test1', r2.conflicts.join(' | '));
+    }
+    // Move targets follow the same depth rule as "Add page under it" (reviewer note 4).
+    {
+      const tGolf = moveTargets(model.draft, 'golf').map((t) => t.id);
+      const tRS = moveTargets(model.draft, 'roomservice').map((t) => t.id);
+      check('Move targets stop where "Add page under it" stops: a page with pages inside cannot go below a section; a single page can go into a level-2 page, not a level-3 one',
+        tGolf.includes('home') && tGolf.includes('eat') && !tGolf.includes('firepit') && tRS.includes('firepit') && !tRS.includes('firepit-menu'), tGolf.join(',') + ' / ' + tRS.join(','));
+      let r = 'x';
+      model.commit('too deep', (d) => { r = reparentPage(d, 'golf', 'firepit'); });
+      check('A move deeper than allowed is refused', r === null && model.find('golf').parent.id === 'home');
+      model.undo();
+    }
+    model.load(published, null);
+  }
+
   // 8. QR.
   const text = 'https://www.cavehotels.com/book-a-table/';
   const q = encodeQR(text);
@@ -502,7 +647,7 @@ async function run() {
   document.getElementById('summary').style.color = fail ? 'var(--red)' : 'var(--green)';
   window.selftestDone = { pass, fail };
 }
-run().catch((e) => { check('Self-test crashed', false, e.message); document.getElementById('summary').textContent = 'Crashed: ' + e.message; window.selftestDone = { pass, fail: fail + 1 }; });
+run().catch((e) => { check('Self-test crashed', false, e.message + ' ' + (e.stack || '').split('\n').slice(1, 3).join(' ')); document.getElementById('summary').textContent = 'Crashed: ' + e.message; window.selftestDone = { pass, fail: fail + 1 }; });
 </script>
 </body>
 </html>

@@ -12,9 +12,10 @@
 import { clone, canonical } from './util.js';
 
 const FIELDS = ['title', 'kicker', 'subtitle', 'image', 'body', 'facts', 'hours', 'qr', 'sections', 'images', 'items', 'hidden', 'type',
-  'description', 'photos', 'films', 'backgroundFilm', 'slides'];
+  'description', 'photos', 'films', 'backgroundFilm', 'slides', 'hoursTitle', 'childrenTitle'];
 const LABELS = { title: 'title', kicker: 'small caps line', subtitle: 'subtitle', image: 'photo', body: 'text', facts: 'facts', hours: 'hours', qr: 'QR link', sections: 'menu', images: 'photos', items: 'cards', hidden: 'hidden', type: 'page type',
-  description: 'description', photos: 'photo frames', films: 'films', backgroundFilm: 'background film', slides: 'slides' };
+  description: 'description', photos: 'photo frames', films: 'films', backgroundFilm: 'background film', slides: 'slides',
+  hoursTitle: 'hours heading', childrenTitle: 'heading above the pages inside' };
 const HOTEL = ['name', 'tagline', 'reception', 'roomService', 'wifiName', 'wifiPassword', 'checkout'];
 
 function index(home) {
@@ -64,6 +65,38 @@ export function threeWayMerge(base, theirs, draft) {
     }
   }
 
+  const refreshM = () => { M.clear(); for (const [k, v] of index(doc.home)) M.set(k, v); };
+
+  // Pages the draft moved to another parent ("Move to…"): move them in the
+  // merged copy too, unless the newer publish moved them as well. Run once
+  // before deletions, so a page moved out of a parent the draft then
+  // deleted is not dropped along with it, and once after additions, for a
+  // page moved into a page that is new in the draft.
+  const done = new Set();
+  const applyMoves = (last) => {
+    refreshM();
+    for (const [id, dEntry] of D) {
+      const bEntry = B.get(id), tEntry = T.get(id), mEntry = M.get(id);
+      if (done.has(id) || !bEntry || !mEntry || !dEntry.parentId || dEntry.parentId === bEntry.parentId) continue;
+      if (tEntry && tEntry.parentId !== bEntry.parentId && tEntry.parentId !== dEntry.parentId) { done.add(id); conflicts.push(`${label(dEntry)}: kept where the newer publish put it instead of where you moved it`); continue; }
+      const target = M.get(dEntry.parentId)?.page;
+      const from = M.get(mEntry.parentId)?.page;
+      if (!target && !last && !B.has(dEntry.parentId)) continue;   // moved into a new page: after additions
+      done.add(id);
+      if (!target || !from || target.type === 'finished' || index(mEntry.page).has(dEntry.parentId)) { conflicts.push(`${label(dEntry)}: could not be moved because the place you moved it to was changed by the newer publish`); continue; }
+      if (from === target) continue;
+      from.children = (from.children || []).filter((c) => c.id !== id);
+      target.children = target.children || [];
+      const dKids = D.get(dEntry.parentId)?.page.children || [];
+      const at = Math.min(Math.max(dKids.findIndex((c) => c.id === id), 0), target.children.length);
+      target.children.splice(at, 0, mEntry.page);
+      applied++;
+      refreshM();
+    }
+  };
+  applyMoves(false);
+
+  refreshM();
   // Pages the draft deleted (in base, not in draft).
   for (const [id, bEntry] of B) {
     if (D.has(id) || !M.has(id)) continue;
@@ -76,7 +109,10 @@ export function threeWayMerge(base, theirs, draft) {
   }
 
   // Pages the draft added (not in base): put them under the same parent.
-  const refreshM = () => { M.clear(); for (const [k, v] of index(doc.home)) M.set(k, v); };
+  // Pages already published that the draft moved inside a new page are
+  // taken out of the copy; the second move pass puts them there, so no
+  // page is ever in the result twice.
+  const withoutExisting = (page) => { if (page.children) page.children = page.children.filter((c) => !B.has(c.id)).map(withoutExisting); return page; };
   refreshM();
   for (const [id, dEntry] of D) {
     if (B.has(id) || M.has(id)) continue;
@@ -85,10 +121,11 @@ export function threeWayMerge(base, theirs, draft) {
     const dParent = D.get(dEntry.parentId).page;
     const at = Math.min((dParent.children || []).findIndex((c) => c.id === id), (parent.children || []).length);
     parent.children = parent.children || [];
-    parent.children.splice(at < 0 ? parent.children.length : at, 0, clone(dEntry.page));
+    parent.children.splice(at < 0 ? parent.children.length : at, 0, withoutExisting(clone(dEntry.page)));
     applied++;
     refreshM();
   }
+  applyMoves(true);
 
   // Reorders: apply the draft's order to the children that still exist,
   // unless the newer publish also reordered them.

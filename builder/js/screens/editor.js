@@ -3,13 +3,36 @@
 
 import { el, clear, svgIcon, plural } from '../util.js';
 import { model, addPage, newPage, movePage, moveInList, PAGE_TYPES } from '../model.js';
-import { LIMITS, validQR } from '../validate.js';
+import { LIMITS, validQR, galleryFrames } from '../validate.js';
 import { toast, textField, uid, sortable, moveButtons, iconButton, confirmModal, modal } from '../ui.js';
 import { TVPreview } from '../preview/stage.js';
 import { pickPhoto } from './media.js';
 import { pickFilm, posterCapture, filmInfoBox } from './films.js';
 import { prepareSlide } from '../media.js';
 import { remotePad } from './remote.js';
+import { moveModal } from './move.js';
+import { frameStill } from '../bundle.js';
+
+/** Remembered per browser: the TV preview takes most of the window. */
+const BIG_KEY = 'cave.builder.largePreview';
+const readBig = () => { try { return localStorage.getItem(BIG_KEY) === '1'; } catch { return false; } };
+const writeBig = (on) => { try { if (on) localStorage.setItem(BIG_KEY, '1'); else localStorage.removeItem(BIG_KEY); } catch { /* private mode: not remembered */ } };
+
+/**
+ * Writes a gallery's frames back. Frames with any film are kept as `slides`
+ * with `images` carrying every frame's still (so an older TV app still shows
+ * photos); frames that are all photos are plain `images`, as before.
+ */
+function setFrames(pg, frames) {
+  if (frames.some((fr) => fr.film)) {
+    pg.slides = frames.map((fr) => (fr.film ? { film: fr.film, ...(fr.poster ? { poster: fr.poster } : {}) } : { image: fr.image }));
+    pg.images = frames.map(frameStill).filter(Boolean);
+  } else {
+    delete pg.slides;
+    pg.images = frames.map((fr) => fr.image).filter(Boolean);
+  }
+}
+const framesCopy = (pg) => galleryFrames(pg).map((fr) => ({ ...fr }));
 
 /** Sets a text field, dropping it when empty so the bundle stays clean. */
 const put = (obj, key, v) => { if (v === '' || v == null) delete obj[key]; else obj[key] = v; };
@@ -23,7 +46,7 @@ const PART_DEFS = {
   qr:       { label: 'QR link', hint: 'A web address and one line' },
   children: { label: 'Pages under it', hint: 'Tiles that open further pages' },
   menu:     { label: 'Menu', hint: 'Parts, dishes, prices' },
-  images:   { label: 'Photos', hint: 'The gallery' },
+  images:   { label: 'Photos and films', hint: 'Each a photo or a silent film' },
   items:    { label: 'Cards', hint: 'Title, line, text, photo' },
   hotel:    { label: 'Contact card', hint: 'From Hotel details' },
   photos:   { label: 'Photo frames', hint: 'Up to six photos in the page, fill or whole' },
@@ -39,7 +62,7 @@ function partsFor(page) {
     case 'info': return ['heading', 'photo', 'text', 'facts', 'photos', 'films', 'children', 'hours', 'qr', 'bg'];
     case 'menu': return ['heading', 'photo', 'text', 'menu', 'films', 'hours', 'qr', 'children', 'bg'];
     case 'gallery': return ['heading', 'photo', 'images', 'children'];
-    case 'list': return ['heading', 'photo', 'text', 'photos', 'films', 'items', 'children', 'bg'];
+    case 'list': return ['heading', 'photo', 'text', 'photos', 'films', 'items', 'qr', 'children', 'bg'];
     case 'contact': return ['heading', 'photo', 'hotel', 'facts', 'text', 'photos', 'films', 'qr', 'children', 'bg'];
     case 'finished': return ['heading', 'photo', 'slides', 'qr'];
     default: return ['heading', 'photo'];
@@ -48,7 +71,7 @@ function partsFor(page) {
 
 function partForField(field) {
   const head = field.split('.')[0];
-  return { title: 'heading', kicker: 'heading', subtitle: 'heading', description: 'heading', image: 'photo', body: 'text', facts: 'facts', hours: 'hours', qr: 'qr', children: 'children', sections: 'menu', images: 'images', items: 'items',
+  return { title: 'heading', kicker: 'heading', subtitle: 'heading', description: 'heading', image: 'photo', body: 'text', facts: 'facts', hours: 'hours', hoursTitle: 'hours', qr: 'qr', children: 'children', childrenTitle: 'children', sections: 'menu', images: 'images', items: 'items',
     photos: 'photos', films: 'films', backgroundFilm: 'bg', slides: 'slides' }[head] || 'heading';
 }
 
@@ -58,11 +81,11 @@ function partSummary(page, part, app) {
     case 'photo': return app.media.label(page.image);
     case 'text': return page.body ? page.body.slice(0, 40) + (page.body.length > 40 ? '…' : '') : 'Not used';
     case 'facts': return (page.facts || []).length ? plural(page.facts.length, 'point') : 'Not used';
-    case 'hours': return (page.hours || []).length ? plural(page.hours.length, 'row') : 'Not used';
+    case 'hours': return (page.hours || []).length ? `${(page.hoursTitle || '').trim() || 'Opening hours'} · ${plural(page.hours.length, 'row')}` : 'No hours card';
     case 'qr': return page.qr ? page.qr.label || page.qr.url : 'Not used';
     case 'children': return (page.children || []).length ? page.children.map((c) => c.title).join(' · ') : 'None yet';
     case 'menu': { const n = (page.sections || []).reduce((a, s) => a + (s.items || []).length, 0); return `${plural((page.sections || []).length, 'part')} · ${plural(n, 'dish', 'dishes')}`; }
-    case 'images': return (page.images || []).length ? plural(page.images.length, 'photo') : 'None yet';
+    case 'images': { const fr = galleryFrames(page); const n = fr.filter((x) => x.film).length; return fr.length ? `${plural(fr.length - n, 'photo')}${n ? `, ${plural(n, 'film')}` : ''}` : 'None yet'; }
     case 'items': return (page.items || []).length ? plural(page.items.length, 'card') : 'None yet';
     case 'hotel': return 'Reception, room service, Wi-Fi, check-out';
     case 'photos': return (page.photos || []).length ? plural(page.photos.length, 'frame') : 'Not used';
@@ -79,7 +102,7 @@ export function mount(host, app, params) {
   if (!found) { host.append(el('div.empty', 'That page no longer exists. ', el('button.btn.link', { type: 'button', onclick: () => app.go('home') }, 'Back to Home'))); return {}; }
 
   const compact = () => window.innerWidth <= 1200;
-  const state = { part: 'heading', field: null, mode: 'edit', safe: false, view: 'draft', focusField: null, showRemote: compact() || matchMedia('(pointer: coarse)').matches };
+  const state = { part: 'heading', field: null, mode: 'edit', safe: false, view: 'draft', focusField: null, showRemote: compact() || matchMedia('(pointer: coarse)').matches, big: readBig() };
   let preview = null;
   const page = () => model.find(pageId)?.page;
   const commit = (label, fn, key) => {
@@ -92,7 +115,17 @@ export function mount(host, app, params) {
   const rail = el('div.rail');
   const centre = el('div.centre');
   const side = el('div.side');
-  host.append(sub, el('div.editor', rail, centre, side));
+  const editorEl = el('div.editor' + (state.big ? '.big' : ''), rail, centre, side);
+  host.append(sub, editorEl);
+
+  function setBig(on) {
+    state.big = on;
+    writeBig(on);
+    editorEl.classList.toggle('big', on);
+    renderSub();
+    renderSide();
+    preview?.fit();
+  }
 
   // ---- sub bar ----
   function renderSub() {
@@ -104,6 +137,7 @@ export function mount(host, app, params) {
     sub.append(crumb, el('span.pill', PAGE_TYPES[p.type]?.label || p.type));
     if (p.hidden) sub.append(el('span.pill.dark', 'Hidden from guests'));
     sub.append(el('span.spacer'));
+    sub.append(el('button.btn.sm' + (state.big ? '.on' : ''), { type: 'button', 'aria-pressed': String(state.big), title: state.big ? 'Back to the usual layout' : 'Make the TV preview fill most of the window', onclick: () => setBig(!state.big) }, state.big ? 'Smaller preview' : 'Large preview'));
     sub.append(el('button.btn.sm', { type: 'button', disabled: !model.canUndo, title: model.canUndo ? `Undo ${model.undoLabel}` : 'Nothing to undo', onclick: () => { const l = model.undo(); if (l) toast(`Undid: ${l}`, { ms: 2500 }); } }, '← Undo'));
     sub.append(el('button.btn.sm', { type: 'button', onclick: () => app.go('home', { page: pageId }) }, 'Done'));
   }
@@ -212,6 +246,12 @@ export function mount(host, app, params) {
   function renderSide() {
     clear(side);
     const p = page();
+    if (state.big) {
+      // The parts list is folded away: choose a part here, or click the TV.
+      const pick = el('select.in', { 'aria-label': 'Part of this page', onchange: (e) => selectPart(e.target.value) });
+      for (const part of partsFor(p)) pick.append(el('option', { value: part, selected: part === state.part }, `${PART_DEFS[part].label} · ${partSummary(p, part, app)}`));
+      side.append(el('label.small.muted', { style: { display: 'block', marginBottom: '4px' } }, 'Part of this page'), pick, el('div', { style: { height: '12px' } }));
+    }
     side.append(el('div.row.between', { style: { marginBottom: '10px' } }, el('h2', { style: { margin: 0 } }, PART_DEFS[state.part].label), el('span.muted.small', PART_DEFS[state.part].hint)));
     const body = el('div');
     side.append(body);
@@ -240,6 +280,7 @@ export function mount(host, app, params) {
     const ops = el('div.row.wrap');
     if (p.id !== 'home') {
       ops.append(el('button.btn.sm', { type: 'button', onclick: () => commit(p.hidden ? `Show ${p.title}` : `Hide ${p.title}`, (pg) => { if (pg.hidden) delete pg.hidden; else pg.hidden = true; }) }, p.hidden ? 'Show to guests' : 'Hide from guests'));
+      ops.append(el('button.btn.sm', { type: 'button', onclick: () => moveModal(app, pageId, { onMoved: () => { renderSub(); renderCentre(); renderSide(); } }) }, 'Move to…'));
     }
     ops.append(el('button.btn.sm', { type: 'button', onclick: () => app.go('home', { page: pageId }) }, 'Open in Home'));
     side.append(ops);
@@ -456,7 +497,7 @@ export function mount(host, app, params) {
     box.append(tf({ label: 'Paragraph', field: 'body', value: p.body || '', limit: LIMITS.body, multiline: true, rows: 7, help: 'Two or three sentences read best from the bed.', onInput: (v) => commit('Edit text', (pg) => put(pg, 'body', v), 'body') }));
   }
 
-  function listEditor(box, { items, render, onMove, onAdd, onRemove, addLabel, max, selector = '.list-row' }) {
+  function listEditor(box, { items, render, onMove, onAdd, onRemove, addLabel, max, selector = '.list-row', empty = 'Nothing here yet.' }) {
     const list = el('div', { role: 'list' });
     items.forEach((item, i) => {
       const row = el('div.list-row', { draggable: 'true', role: 'listitem' });
@@ -469,7 +510,7 @@ export function mount(host, app, params) {
     });
     sortable(list, selector, onMove);
     box.append(list);
-    if (!items.length) box.append(el('p.muted.small', 'Nothing here yet.'));
+    if (!items.length && empty) box.append(el('p.muted.small', empty));
     box.append(el('div', { style: { marginTop: '8px' } }, el('button.btn.sm', { type: 'button', disabled: max && items.length >= max, onclick: onAdd }, '+ ' + addLabel)));
   }
 
@@ -485,6 +526,12 @@ export function mount(host, app, params) {
   }
 
   function renderHours(box, p) {
+    const rows = p.hours || [];
+    if (!rows.length) {
+      box.append(el('div.note.small', { style: { marginBottom: '10px' } }, el('strong', 'No hours card. '), 'Nothing about hours shows on this page. Add a row to show a card of times in the side column.'));
+    } else {
+      box.append(tf({ label: 'Heading', field: 'hoursTitle', value: p.hoursTitle || '', limit: LIMITS.hoursTitle, placeholder: 'Opening hours', help: 'Shown in capitals above the rows. Leave empty for "Opening hours".', onInput: (v) => commit('Edit hours heading', (pg) => put(pg, 'hoursTitle', v), 'hoursTitle') }));
+    }
     listEditor(box, {
       items: p.hours || [],
       render: (h, i) => [
@@ -493,14 +540,18 @@ export function mount(host, app, params) {
       onMove: (a, b) => commit('Reorder hours', (pg) => moveInList(pg.hours, a, b)),
       onAdd: () => { commit('Add hours row', (pg) => { pg.hours = pg.hours || []; pg.hours.push({ label: '', value: '' }); }); renderSide(); },
       onRemove: (i) => removeWithUndo('hours row', (pg) => pg.hours.splice(i, 1)[0], (pg, v) => pg.hours.splice(i, 0, v)),
-      addLabel: 'Add row',
+      addLabel: 'Add row', empty: null,
     });
-    box.append(el('p.help', 'Shown under the heading "Opening hours" in the side column.'));
+    if (rows.length) {
+      box.append(el('button.btn.sm.danger', { type: 'button', style: { marginTop: '12px' }, onclick: () => removeWithUndo('hours card', (pg) => { const v = { hours: pg.hours, hoursTitle: pg.hoursTitle }; delete pg.hours; delete pg.hoursTitle; return v; }, (pg, v) => { pg.hours = v.hours; if (v.hoursTitle) pg.hoursTitle = v.hoursTitle; }) }, 'Remove the hours card'));
+      box.append(el('p.help', 'Removes every row and the heading at once. Undo puts them back.'));
+    }
   }
 
   function renderQR(box, p) {
     if (!p.qr) {
       box.append(el('p.small.muted', 'No QR link on this page.'));
+      if (p.type === 'list') box.append(el('p.help', 'For a QR code on one card only, add it to that card under Cards.'));
       box.append(el('button.btn.sm', { type: 'button', onclick: () => { commit('Add QR link', (pg) => { pg.qr = { label: '', url: 'https://www.cavehotels.com/' }; }); renderSide(); } }, '+ Add QR link'));
       return;
     }
@@ -510,11 +561,17 @@ export function mount(host, app, params) {
     const check = (v) => { status.textContent = validQR(v) ? 'Looks right. The TV draws it as a QR code guests scan with their phone.' : 'Not a valid web address yet. It should start with https://'; status.style.color = validQR(v) ? '' : 'var(--red)'; };
     check(p.qr.url);
     box.append(url, status);
+    if (p.type === 'list') box.append(el('p.help', 'On a page of cards the TV shows one QR code beside the cards: the selected card\'s own QR code if it has one, otherwise this one.'));
     box.append(el('button.btn.sm.danger', { type: 'button', style: { marginTop: '8px' }, onclick: () => removeWithUndo('QR link', (pg) => { const q = pg.qr; delete pg.qr; return q; }, (pg, v) => { pg.qr = v; }) }, 'Remove QR link'));
   }
 
   function renderChildren(box, p) {
     const kids = p.children || [];
+    if (p.type !== 'home') {
+      box.append(tf({ label: 'Heading above these pages', field: 'childrenTitle', value: p.childrenTitle || '', limit: LIMITS.childrenTitle, placeholder: 'e.g. The full experience',
+        help: p.type === 'hub' ? 'Optional. Shown in capitals above the tiles when this section opens as a page. Strips have no heading.' : 'Optional. Shown in capitals above the tiles.',
+        onInput: (v) => commit('Edit heading above pages', (pg) => put(pg, 'childrenTitle', v), 'childrenTitle') }));
+    }
     listEditor(box, {
       items: kids,
       render: (c) => el('div.row.between', el('span', el('b', c.title), c.hidden ? el('span.pill.dark', { style: { marginLeft: '6px' } }, 'Hidden') : null),
@@ -558,22 +615,45 @@ export function mount(host, app, params) {
     box.append(el('button.btn.pri.sm', { type: 'button', style: { marginTop: '8px' }, onclick: () => app.go('menus', { menu: pageId }) }, 'Edit dishes in Menus'));
   }
 
+  // Gallery frames: each a photo or a silent film loop (Rhys, 9 Nov 2026).
   function renderImages(box, p) {
-    const imgs = p.images || [];
+    const frames = galleryFrames(p);
+    const edit = (label, fn) => commit(label, (pg) => { const fr = framesCopy(pg); fn(fr); setFrames(pg, fr); });
     listEditor(box, {
-      items: imgs,
-      render: (src, i) => {
-        const th = el('div.thumb');
-        const url = app.media.url(src, 800);
+      items: frames,
+      render: (fr, i) => {
+        const th = el('div.thumb' + (fr.film ? '.film' : ''));
+        const url = app.media.url(frameStill(fr), 800);
         if (url) th.style.backgroundImage = `url("${url}")`;
-        return el('div.photo-pick', th, el('div', el('div.small', `${i + 1}. ${app.media.label(src)}`), el('button.btn.sm', { type: 'button', style: { marginTop: '4px' }, onclick: () => pickPhoto(app, { onPick: (s) => commit('Change gallery photo', (pg) => { pg.images[i] = s; }) }) }, 'Swap')));
+        if (fr.film) th.append(el('span.play'));
+        if (!fr.film) {
+          return el('div.photo-pick', { dataset: { field: `images.${i}` }, tabindex: '-1' }, th, el('div', el('div.small', `${i + 1}. ${app.media.label(fr.image)}`),
+            el('button.btn.sm', { type: 'button', style: { marginTop: '4px' }, onclick: () => pickPhoto(app, { onPick: (s2) => edit('Change gallery photo', (list) => { list[i] = { image: s2 }; }) }) }, 'Swap')));
+        }
+        const missingPoster = !fr.poster;
+        return el('div', { dataset: { field: `images.${i}.film` }, tabindex: '-1' },
+          el('div.photo-pick', th, el('div', el('div.small', el('b', `${i + 1}. Film: `), app.media.label(fr.film)),
+            el('div.row.wrap', { style: { marginTop: '6px' } },
+              el('button.btn.sm', { type: 'button', onclick: () => pickFilm(app, { silentOnly: true, onPick: (src, rec) => edit('Change gallery film', (list) => { list[i] = { film: src, ...(rec.poster ? { poster: rec.poster } : {}) }; }) }) }, 'Swap film'),
+              el('button.btn.sm' + (missingPoster ? '.pri' : ''), { type: 'button', dataset: { field: `images.${i}.poster` }, onclick: () => posterCapture(app, fr.film, { title: p.title, previous: fr.poster || null, onDone: (ps) => edit('Set poster', (list) => { list[i].poster = ps; }) }) }, fr.poster ? 'Change poster' : 'Capture a poster')))),
+          el('div', { style: { marginTop: '6px' } }, filmInfoBox(app, fr.film)),
+          missingPoster ? el('div.help', { style: { color: 'var(--red)' } }, 'No poster yet. The TV shows it until the film has loaded; capture a frame.') : null);
       },
-      onMove: (a, b) => commit('Reorder photos', (pg) => moveInList(pg.images, a, b)),
-      onAdd: () => pickPhoto(app, { onPick: (s) => { commit('Add gallery photo', (pg) => { pg.images = pg.images || []; pg.images.push(s); }); renderSide(); } }),
-      onRemove: (i) => removeWithUndo('photo', (pg) => pg.images.splice(i, 1)[0], (pg, v) => pg.images.splice(i, 0, v)),
+      onMove: (a, b) => edit('Reorder photos and films', (list) => moveInList(list, a, b)),
+      onAdd: () => pickPhoto(app, { onPick: (s2) => { edit('Add gallery photo', (list) => { list.push({ image: s2 }); }); renderSide(); } }),
+      onRemove: (i) => removeWithUndo(frames[i].film ? 'film' : 'photo', (pg) => { const fr = framesCopy(pg); const [v] = fr.splice(i, 1); setFrames(pg, fr); return v; }, (pg, v) => { const fr = framesCopy(pg); fr.splice(i, 0, v); setFrames(pg, fr); }),
       addLabel: 'Add photo', max: LIMITS.galleryMax,
     });
-    box.append(el('p.help', 'The first photo shows when the page opens. Guests move along the thumbnails with the remote.'));
+    box.append(el('div.row.wrap', { style: { marginTop: '6px' } }, el('button.btn.sm', { type: 'button', disabled: frames.length >= LIMITS.galleryMax, onclick: () => addGalleryFilm(p) }, '+ Add a silent film')));
+    box.append(el('p.help', { style: { marginTop: '10px' } }, `Up to ${LIMITS.galleryMax}. The first one shows when the page opens; guests move along the row with the remote. A film plays on a silent loop, like a moving photo. Films with a sound track cannot be chosen unless marked as silent in Media.`));
+  }
+
+  function addGalleryFilm(p) {
+    pickFilm(app, { silentOnly: true, onPick: (src, rec) => {
+      commit('Add gallery film', (pg) => { const fr = framesCopy(pg); fr.push({ film: src, ...(rec.poster ? { poster: rec.poster } : {}) }); setFrames(pg, fr); });
+      renderSide();
+      if (!rec.poster) posterCapture(app, src, { title: p.title, onDone: (ps) => commit('Set poster', (pg) => { const fr = framesCopy(pg); const hit = fr.find((x) => x.film === src && !x.poster); if (hit) hit.poster = ps; setFrames(pg, fr); }) });
+    } });
   }
 
   function renderItems(box, p) {
@@ -591,6 +671,7 @@ export function mount(host, app, params) {
           tf({ label: 'Text', field: `items.${i}.body`, value: it.body || '', limit: LIMITS.cardBody, multiline: true, rows: 3, onInput: (v) => commit('Edit card', (pg) => { if (v) pg.items[i].body = v; else delete pg.items[i].body; }, `items.${i}.body`) }),
           el('div.photo-pick', { dataset: { field: `items.${i}.image` }, tabindex: '-1' }, th, el('div', el('div.small', app.media.label(it.image)),
             el('button.btn.sm', { type: 'button', style: { marginTop: '4px' }, onclick: () => pickPhoto(app, { onPick: (s) => commit('Change card photo', (pg) => { pg.items[i].image = s; }) }) }, it.image ? 'Swap photo' : 'Choose photo'))),
+          cardQR(it, i),
         ];
       },
       onMove: (a, b) => commit('Reorder cards', (pg) => moveInList(pg.items, a, b)),
@@ -598,6 +679,23 @@ export function mount(host, app, params) {
       onRemove: (i) => removeWithUndo('card', (pg) => pg.items.splice(i, 1)[0], (pg, v) => pg.items.splice(i, 0, v)),
       addLabel: 'Add card',
     });
+  }
+
+  /** A card's own QR code (ListItem.qr): same checks as the page's QR link. */
+  function cardQR(it, i) {
+    const box = el('div.card-qr', { style: { marginTop: '10px' } });
+    if (!it.qr) {
+      box.append(el('button.btn.sm', { type: 'button', onclick: () => { commit('Add QR code to card', (pg) => { pg.items[i].qr = { label: '', url: 'https://www.cavehotels.com/' }; }); renderSide(); setTimeout(() => side.querySelector(`[data-field="items.${i}.qr.url"]`)?.focus(), 0); } }, '+ Add a QR code to this card'));
+      return box;
+    }
+    box.append(el('div.small', el('b', 'QR code for this card')));
+    box.append(tf({ label: 'What it does', field: `items.${i}.qr.label`, value: it.qr.label || '', limit: LIMITS.qrLabel, placeholder: 'Tickets and times', onInput: (v) => commit('Edit card QR line', (pg) => { pg.items[i].qr.label = v; }, `items.${i}.qr.label`) }));
+    const status = el('div.help');
+    const check = (v) => { status.textContent = validQR(v) ? 'Looks right. Shown beside the cards while this card is selected.' : 'Not a valid web address yet. It should start with https://'; status.style.color = validQR(v) ? '' : 'var(--red)'; };
+    box.append(tf({ label: 'Web address', field: `items.${i}.qr.url`, value: it.qr.url || '', type: 'url', spellcheck: false, placeholder: 'https://www.cavehotels.com/…', onInput: (v) => { commit('Edit card QR address', (pg) => { pg.items[i].qr.url = v; }, `items.${i}.qr.url`); check(v); } }), status);
+    check(it.qr.url);
+    box.append(el('button.btn.sm.danger', { type: 'button', style: { marginTop: '6px' }, onclick: () => removeWithUndo('QR code from the card', (pg) => { const q = pg.items[i].qr; delete pg.items[i].qr; return q; }, (pg, v) => { pg.items[i].qr = v; }) }, 'Remove QR code'));
+    return box;
   }
 
   function renderHotelPart(box) {

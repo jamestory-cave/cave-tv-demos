@@ -29,9 +29,12 @@ function header(page, ctx) {
   return h;
 }
 
+/** The heading over the hours card: the page's own, or "Opening hours" as before. */
+export const hoursHeading = (page) => ((page.hoursTitle || '').trim() || 'Opening hours').toUpperCase();
+
 function hoursBlock(page, entry) {
   const b = stop(el('div.tv-card.tv-hours'), 'hours', entry ? { entry: '1' } : {});
-  b.append(el('div.tv-kicker', 'OPENING HOURS'));
+  b.append(f(el('div.tv-kicker', hoursHeading(page)), page.id, 'hoursTitle', 'Hours heading'));
   (page.hours || []).forEach((h, i) => {
     b.append(el('div.tv-hrow',
       f(el('div.l', h.label || ' '), page.id, `hours.${i}.label`, 'Hours label'),
@@ -41,13 +44,31 @@ function hoursBlock(page, entry) {
 }
 
 function qrBlock(page, entry) {
-  const b = stop(el('div.tv-card.tv-qr'), 'qr', entry ? { entry: '1' } : {});
+  return qrCard(page.qr, page.id, 'qr', stop(el('div.tv-card.tv-qr'), 'qr', entry ? { entry: '1' } : {}));
+}
+
+/** The QR card (QRBlock on the TV): "ON YOUR PHONE", the code and its line. `field` is 'qr' or 'items.3.qr'. */
+function qrCard(qr, pageId, field, b = el('div.tv-card.tv-qr')) {
   b.append(el('div.tv-kicker', 'ON YOUR PHONE'));
   const row = el('div.tv-qr-row');
-  row.append(f(el('div.tv-qr-img', qrSVG(page.qr.url || ' ', 180)), page.id, 'qr.url', 'QR web address'));
-  row.append(f(el('div.tv-qr-label', page.qr.label || ' '), page.id, 'qr.label', 'QR line'));
+  row.append(f(el('div.tv-qr-img', qrSVG(qr.url || ' ', 180)), pageId, `${field}.url`, 'QR web address'));
+  row.append(f(el('div.tv-qr-label', qr.label || ' '), pageId, `${field}.label`, 'QR line'));
   b.append(row);
-  return f(b, page.id, 'qr', 'QR link');
+  return f(b, pageId, field, 'QR link');
+}
+
+/** True for a QR the TV keeps: it drops a QR whose address is empty (Content.swift `optionalQR`). */
+const hasAddress = (qr) => !!qr && !!String(qr.url || '').trim();
+
+/**
+ * The QR a list page shows while card `i` is focused: the card's own QR, else
+ * the page's, else none. `i` < 0 means no card is focused (the page's QR).
+ */
+export function listQRFor(page, i) {
+  const it = (page.items || [])[i];
+  if (it && hasAddress(it.qr)) return { qr: it.qr, slot: `card-${i}` };
+  if (hasAddress(page.qr)) return { qr: page.qr, slot: 'page' };
+  return null;
 }
 
 function tile(child, ctx, entry, w = 380, h = 214) {
@@ -113,7 +134,16 @@ function childTiles(page, ctx, entry, w = 380, h = 214) {
   if (!kids.length) return null;
   const row = el('div.tv-tiles');
   kids.forEach((c, i) => row.append(tile(c, ctx, entry && i === 0, w, h)));
-  return f(row, page.id, 'children', 'Pages under this one');
+  return withChildrenHeading(page, f(row, page.id, 'children', 'Pages under this one'));
+}
+
+/** The page's heading above its child tiles (`childrenTitle`), drawn as a kicker like the TV's. */
+function withChildrenHeading(page, row) {
+  const t = (page.childrenTitle || '').trim();
+  if (!t) return row;
+  const box = el('div.tv-kids');
+  box.append(f(el('div.tv-kicker.tv-kids-h', t.toUpperCase()), page.id, 'childrenTitle', 'Heading above the pages inside'), row);
+  return box;
 }
 
 function factList(page, entry) {
@@ -137,7 +167,7 @@ function renderInfo(page, ctx) {
   if (kids.length) {
     const row = el('div.tv-tiles');
     kids.forEach((c, i) => row.append(tile(c, ctx, first === 'tiles' && i === 0)));
-    reading.append(f(row, page.id, 'children', 'Pages under this one'));
+    reading.append(withChildrenHeading(page, f(row, page.id, 'children', 'Pages under this one')));
   }
   const aside = el('div.tv-aside');
   if ((page.hours || []).length) aside.append(hoursBlock(page, first === 'hours'));
@@ -196,20 +226,49 @@ function renderList(page, ctx) {
   const fr = frames(page, ctx, true); if (fr) list.append(fr);
   const fc = filmCards(page, ctx, !fr); if (fc) list.append(fc);
   (page.items || []).forEach((it, i) => {
-    const card = stop(el('div.tv-lcard'), `card-${i}`, i === 0 && !fr && !fc ? { entry: '1' } : {});
+    const card = stop(el('div.tv-lcard'), `card-${i}`, { card: String(i), ...(i === 0 && !fr && !fc ? { entry: '1' } : {}) });
     const img = f(el('div.img'), page.id, `items.${i}.image`, 'Card photo');
     const url = ctx.media.url(it.image, 800);
     if (url) img.style.backgroundImage = `url("${url}")`;
     const w = el('div.w');
-    if (it.meta) w.append(f(el('div.m', it.meta), page.id, `items.${i}.meta`, 'Date or distance'));
+    if (it.meta || it.qr) {
+      // A card with its own QR is marked (as on the TV); the code itself is in the column on the right.
+      const row = el('div.tv-mrow');
+      if (it.meta) row.append(f(el('div.m', it.meta), page.id, `items.${i}.meta`, 'Date or distance'));
+      if (it.qr) row.append(f(el('span.tv-qrmark', { title: 'Has its own QR code' }), page.id, `items.${i}.qr`, 'Card QR code'));
+      w.append(row);
+    }
     w.append(f(el('div.t', it.title || ' '), page.id, `items.${i}.title`, 'Card title'));
     if (it.subtitle) w.append(f(el('div.s', it.subtitle), page.id, `items.${i}.subtitle`, 'Card line'));
     if (it.body) w.append(f(el('div.b', it.body), page.id, `items.${i}.body`, 'Card text'));
     card.append(img, w);
     list.append(f(card, page.id, `items.${i}`, `Card ${i + 1}`));
   });
-  root.append(list);
-  const ct = childTiles(page, ctx, !fr && !fc && !(page.items || []).length); if (ct) root.append(ct);
+  // QR codes (Rhys, 9 Nov 2026), as ListView on the TV: one QR card, large
+  // enough to scan from the bed, pinned bottom-right of the page area (the
+  // stage lifts it out of the scroller so it stays put while the list
+  // scrolls); the cards' column narrows to make room. It shows the focused
+  // card's own QR, else the page's. Every possible card is drawn; the stage
+  // shows one (showListQR). On a list with nothing else to select, the
+  // page's QR card is the stop, as on the TV.
+  const items = page.items || [];
+  const pageQR = hasAddress(page.qr);
+  if (pageQR || items.some((it) => hasAddress(it.qr))) {
+    const pin = el('div.tv-lqr');
+    const kidsShowing = ctx.layout.showsChildren && visible(page.children).length > 0;
+    const onlyQR = !items.length && !fr && !fc && !kidsShowing;
+    if (pageQR) {
+      const card = el('div.tv-card.tv-qr', { dataset: { qrslot: 'page' } });
+      pin.append(qrCard(page.qr, page.id, 'qr', onlyQR ? stop(card, 'qr', { entry: '1' }) : card));
+    }
+    items.forEach((it, i) => { if (hasAddress(it.qr)) pin.append(qrCard(it.qr, page.id, `items.${i}.qr`, el('div.tv-card.tv-qr', { dataset: { qrslot: `card-${i}` } }))); });
+    const firstCard = items.length && !fr && !fc ? 0 : -1;
+    const on = listQRFor(page, ctx.listCard ?? firstCard)?.slot;
+    pin.querySelectorAll('[data-qrslot]').forEach((n) => n.classList.toggle('on', n.dataset.qrslot === on));
+    root.classList.add('has-lqr');
+    root.append(list, pin);
+  } else root.append(list);
+  const ct = childTiles(page, ctx, !fr && !fc && !items.length); if (ct) root.append(ct);
   return root;
 }
 
@@ -256,21 +315,28 @@ function renderHub(page, ctx) {
   if (ctx.layout.showsChildren) {
     const grid = el('div.tv-hub-grid');
     visible(page.children).forEach((c, i) => grid.append(tile(c, ctx, i === 0 && !fr && !fc, 420, 236)));
-    root.append(f(grid, page.id, 'children', 'Pages under this one'));
+    const box = withChildrenHeading(page, f(grid, page.id, 'children', 'Pages under this one'));
+    if (box !== grid) { box.classList.add('tv-kids-hub'); }
+    root.append(box);
   }
   return root;
 }
 
 // ---- gallery (fills the leaf, ignores the chrome inset) -----------------
+// Frames are the page's `slides` when it has any (photos and silent film
+// loops; Rhys, 9 Nov 2026), else its `images`. A film frame shows its poster
+// with a "loops silently" label: the preview never plays video.
 function renderGallery(page, ctx) {
   const root = el('div.tv-gallery');
-  const images = page.images || [];
+  const frames = (page.slides || []).length ? page.slides : (page.images || []).map((image) => ({ image }));
+  const images = frames.map((fr) => fr.image || fr.poster || null);
   const index = Math.min(ctx.galleryIndex || 0, Math.max(0, images.length - 1));
   images.forEach((src, i) => {
     const p = el('div.tv-gphoto' + (i === index ? '.on' : ''));
     const url = ctx.media.url(src, 1920);
     if (url) p.style.backgroundImage = `url("${url}")`;
     p.dataset.photo = String(i);
+    if (frames[i].film) p.append(el('div.tv-gfilm', el('span.dot'), 'Film · loops silently'));
     root.append(p);
   });
   root.append(el('div.tv-gscrim'), el('div.tv-gtop'));
@@ -283,14 +349,20 @@ function renderGallery(page, ctx) {
   cap.append(capIn);
   const thumbs = el('div.tv-thumbs');
   images.forEach((src, i) => {
-    const t = stop(el('div.tv-thumb' + (i === index ? '.on' : '')), `photo-${i}`, { photo: String(i), ...(i === 0 ? { entry: '1' } : {}) });
+    const t = stop(el('div.tv-thumb' + (i === index ? '.on' : '') + (frames[i].film ? '.film' : '')), `photo-${i}`, { photo: String(i), ...(i === 0 ? { entry: '1' } : {}) });
     const url = ctx.media.url(src, 800);
     if (url) t.style.backgroundImage = `url("${url}")`;
-    thumbs.append(f(t, page.id, `images.${i}`, `Photo ${i + 1}`));
+    if (frames[i].film) t.append(el('span.tv-film-mark'));
+    thumbs.append(f(t, page.id, `images.${i}`, frames[i].film ? `Film ${i + 1}` : `Photo ${i + 1}`));
   });
   cap.append(f(thumbs, page.id, 'images', 'Photos'));
   const ct = childTiles(page, ctx, !images.length, 300, 168);
-  if (ct) { ct.classList.add('tv-gtiles'); cap.append(ct); }
+  if (ct) {
+    const row = ct.classList.contains('tv-tiles') ? ct : ct.querySelector('.tv-tiles');
+    row.classList.add('tv-gtiles');
+    if (ct !== row) ct.classList.add('tv-kids-g');
+    cap.append(ct);
+  }
   root.append(cap);
   return root;
 }

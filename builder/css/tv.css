@@ -252,3 +252,28 @@
 /* child-page tiles under a gallery's thumbnails (every page type shows its pages after its own content) */
 .tv-gtiles { padding: 0 72px 8px; gap: 28px; }
 .tv-gtiles .tv-tile { width: 300px; height: 168px; }
+
+/* Rhys's requests (9 Nov 2026): heading above child tiles, list QR column, gallery film frames */
+.tv-kids { display: flex; flex-direction: column; }
+.tv-kids-h { margin-top: 10px; }
+.tv-kids > .tv-tiles { padding-top: 22px; }
+.tv-kids-hub > .tv-hub-grid { padding-top: 26px; }
+.tv-kids-hub { margin-top: 40px; }
+.tv-kids-g .tv-kids-h { padding: 0 72px; }
+.tv-kids-g > .tv-gtiles { padding-top: 16px; }
+/* List QR (ListView): 440 wide, 56 gap, pinned bottom-right; the stage moves it out of the scroller (.tv-lqr-pin). */
+.tv-page-in.has-lqr { padding-right: calc(72px + 440px + 56px); }
+.tv-lqr { width: 440px; }
+.tv-lqr-pin { position: absolute; right: 72px; bottom: 60px; z-index: 6; transition: opacity 700ms var(--ease); }
+.tv-stage.text-faded .tv-lqr-pin { opacity: 0; }
+.tv-lqr .tv-qr { display: none; box-shadow: 0 6px 36px rgba(0,0,0,.5); }
+.tv-lqr .tv-qr.on { display: flex; }
+.tv-gfilm { position: absolute; right: 72px; top: 200px; z-index: 5; display: flex; align-items: center; gap: 12px; font-size: 22px; color: rgba(255,255,255,.75); background: rgba(8,8,8,.6); border: 1px solid rgba(183,153,109,.5); padding: 8px 18px; border-radius: 999px; }
+.tv-gfilm .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--gold); }
+.tv-thumb { position: relative; }
+.tv-thumb.film .tv-film-mark { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; background: rgba(8,8,8,.6); border: 2px solid rgba(255,255,255,.85); }
+.tv-thumb.film .tv-film-mark::after { content: ''; position: absolute; left: 16px; top: 11px; border-style: solid; border-width: 9px 0 9px 14px; border-color: transparent transparent transparent #fff; }
+.tv-mrow { display: flex; align-items: center; gap: 14px; min-height: 22px; }
+.tv-qrmark { width: 20px; height: 20px; display: inline-block; background:
+  linear-gradient(var(--gold), var(--gold)) 0 0 / 8px 8px no-repeat, linear-gradient(var(--gold), var(--gold)) 100% 0 / 8px 8px no-repeat,
+  linear-gradient(var(--gold), var(--gold)) 0 100% / 8px 8px no-repeat, linear-gradient(var(--gold), var(--gold)) 70% 70% / 5px 5px no-repeat; }

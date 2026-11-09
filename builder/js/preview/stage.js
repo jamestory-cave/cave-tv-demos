@@ -14,7 +14,7 @@
 // text layout is not SwiftUI's, and QR codes may pick a different mask.
 
 import { el, clear } from '../util.js';
-import { renderPage } from './pages.js';
+import { renderPage, listQRFor } from './pages.js';
 
 export const W = 1920, H = 1080;
 const SLIVER = 48, GAP = 16, MIN_CLOSED = 120, MAX_CLOSED = 300, MIN_OPEN = 420, CHROME = 190;
@@ -28,7 +28,9 @@ export function hasOwnContent(page) {
     default:
       return !!page.body || (page.facts || []).length > 0 || (page.hours || []).length > 0
         || (page.items || []).length > 0 || (page.sections || []).length > 0 || (page.images || []).length > 0
-        || (page.photos || []).length > 0 || (page.films || []).length > 0;
+        || (page.photos || []).length > 0 || (page.films || []).length > 0
+        || (page.type === 'gallery' && (page.slides || []).length > 0)
+        || (page.type === 'list' && !!page.qr?.url);   // a list with only a QR code: its card is a stop (StripsModel)
   }
 }
 
@@ -275,6 +277,18 @@ export class TVPreview {
     this.selectedField = key;
     this.stage.querySelectorAll('[data-f].is-selected').forEach((n) => n.classList.remove('is-selected'));
     if (!key) return;
+    // A list page's QR column follows the card being edited, as it follows focus on the TV.
+    // In remote mode focus decides instead.
+    const editing = this.mode === 'edit';
+    const card = /\|items\.(\d+)/.exec(key);
+    if (editing && card) this.showListQR(Number(card[1]));
+    else if (editing && /\|qr(\.|$)/.test(key)) this.showListQR(-1);
+    // A gallery frame being edited is the one on show.
+    const frame = /\|images\.(\d+)/.exec(key);
+    if (editing && frame && this.pageEl?.querySelector(`.tv-gphoto[data-photo="${frame[1]}"]`)) {
+      this.showPhoto(Number(frame[1]));
+      this.pageEl.querySelector(`.tv-thumb[data-photo="${frame[1]}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
     const target = [...this.stage.querySelectorAll('[data-f]')].find((n) => n.dataset.f === key)
       || [...this.stage.querySelectorAll('[data-f]')].find((n) => key.startsWith(n.dataset.f + '.') || n.dataset.f === key.split('.').slice(0, -1).join('.'));
     if (target) target.classList.add('is-selected');
@@ -444,9 +458,13 @@ export class TVPreview {
       showsChildren: !(n.trail.length === 0 && page.id === this.section?.id),
       fallbackKicker: this.section?.title || null,
     };
-    const { node, full } = renderPage(page, { hotel: this.doc.hotel, layout, media: this.media, galleryIndex: this.galleryIndex, slideIndex: this.slideIndex });
+    if (this.listCardPage !== page.id) { this.listCardPage = page.id; this.listCard = undefined; }
+    const { node, full } = renderPage(page, { hotel: this.doc.hotel, layout, media: this.media, galleryIndex: this.galleryIndex, slideIndex: this.slideIndex, listCard: this.listCard });
     this.pageEl = el('div.tv-page' + (full ? '.tv-full' : ''), node);
     this.leafLayer.append(this.pageEl);
+    // A list's QR card is pinned bottom-right of the page area and stays put while the list scrolls.
+    const pin = this.pageEl.querySelector('.tv-lqr');
+    if (pin) { pin.classList.add('tv-lqr-pin'); this.leafLayer.append(pin); }
     if (this.mode === 'remote') this.applyFocus();
   }
 
@@ -560,7 +578,7 @@ export class TVPreview {
 
   // ---- remote mode ----------------------------------------------------------
 
-  stops() { return this.pageEl ? [...this.pageEl.querySelectorAll('[data-stop]')] : []; }
+  stops() { return this.pageEl ? [...this.pageEl.querySelectorAll('[data-stop]'), ...this.leafLayer.querySelectorAll('.tv-lqr-pin [data-stop]')] : []; }
 
   focusEntry(preferred) {
     const stops = this.stops();
@@ -580,6 +598,7 @@ export class TVPreview {
       s.classList.toggle('is-focused', on);
       if (on) {
         if (s.dataset.photo !== undefined) this.showPhoto(Number(s.dataset.photo));
+        if (s.dataset.card !== undefined) this.showListQR(Number(s.dataset.card));
         this.scrollTo(s);
       }
     }
@@ -595,6 +614,15 @@ export class TVPreview {
     this.pageEl.querySelectorAll('.tv-thumb').forEach((t) => t.classList.toggle('on', Number(t.dataset.photo) === i));
     const count = this.pageEl.querySelector('[data-count]');
     if (count) count.textContent = `${i + 1} of ${this.pageEl.querySelectorAll('.tv-gphoto').length}`;
+  }
+
+  /** On a list page, shows the QR for card `i` (its own, else the page's); -1 for the page's. */
+  showListQR(i) {
+    const page = this.pageOnShow;
+    if (!this.pageEl || page?.type !== 'list') return;
+    this.listCard = i;
+    const on = listQRFor(page, i)?.slot;
+    this.leafLayer.querySelectorAll('[data-qrslot]').forEach((n) => n.classList.toggle('on', n.dataset.qrslot === on));
   }
 
   showSlide(i) {
@@ -632,7 +660,7 @@ export class TVPreview {
 
   scrollTo(s) {
     const page = this.pageEl;
-    if (!page || page.classList.contains('tv-full')) return;
+    if (!page || page.classList.contains('tv-full') || !page.contains(s)) return;
     const { top: t, height } = this.pageOffset(s);
     const top = t - 30;
     const bottom = t + height + 30;

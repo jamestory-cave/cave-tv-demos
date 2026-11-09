@@ -6,7 +6,8 @@
 import { deepEqual } from './util.js';
 import { cleanPage } from './bundle.js';
 
-const FIELD_LABELS = { title: 'Title', kicker: 'Small caps line', subtitle: 'Subtitle', body: 'Text', image: 'Photo', description: 'Description' };
+const FIELD_LABELS = { title: 'Title', kicker: 'Small caps line', subtitle: 'Subtitle', body: 'Text', image: 'Photo', description: 'Description',
+  hoursTitle: 'Hours heading', childrenTitle: 'Heading above the pages inside' };
 const q = (s) => (s === undefined || s === null || s === '' ? 'nothing' : `"${s}"`);
 const short = (s, n = 40) => (s && s.length > n ? s.slice(0, n - 1) + '…' : s);
 const arrow = (a, b) => `${short(a) ?? 'nothing'} → ${short(b) ?? 'nothing'}`;
@@ -58,6 +59,7 @@ function diffList(a, b, lines) {
     if (!ia) { lines.push(`New card: ${title}`); continue; }
     const changed = ['meta', 'subtitle', 'body', 'image'].filter((k) => (ia[k] || '') !== (ib[k] || ''));
     if (changed.length) lines.push(`${title}: ${changed.map((k) => ({ meta: 'date or distance', subtitle: 'line', body: 'text', image: 'photo' })[k]).join(', ')} changed`);
+    if (!deepEqual(ia.qr || null, ib.qr || null)) lines.push(`${title}: ${ib.qr ? (ia.qr ? 'QR code changed' : 'QR code added') : 'QR code removed'}`);
   }
   for (const title of ai.keys()) if (!bi.has(title)) lines.push(`Card removed: ${title}`);
   const order = (s) => (s.items || []).map((x) => x.title).join('|');
@@ -97,9 +99,9 @@ function diffStage2(a, b, lines) {
   // Background film.
   const ba = a.backgroundFilm || null, bb = b.backgroundFilm || null;
   if (!deepEqual(ba, bb)) lines.push(bb ? (ba ? 'Background film changed' : 'Background film added') : 'Background film removed');
-  // Slides.
+  // Slides (a gallery's photos and films are described in diffGallery).
   const sa = a.slides || [], sb = b.slides || [];
-  if (!deepEqual(sa, sb)) {
+  if (b.type !== 'gallery' && a.type !== 'gallery' && !deepEqual(sa, sb)) {
     if (sa.length !== sb.length) lines.push(`Slides: now ${sb.length}${sb.some((s) => s.film) ? ` (${sb.filter((s) => s.film).length} film)` : ''}`);
     else {
       const changed = sb.map((s, i) => (deepEqual(s, sa[i]) ? null : i + 1)).filter(Boolean);
@@ -107,6 +109,18 @@ function diffStage2(a, b, lines) {
       lines.push(sameSet ? 'Slides reordered' : `Slide${changed.length > 1 ? 's' : ''} ${changed.join(', ')} replaced`);
     }
   }
+}
+
+/** A gallery's frames: its slides when it has any, else its photos. */
+const framesOf = (p) => ((p.slides || []).length ? p.slides : (p.images || []).map((image) => ({ image })));
+
+function diffGallery(a, b, lines) {
+  const fa = framesOf(a), fb = framesOf(b);
+  if (deepEqual(fa, fb)) return;
+  const films = fb.filter((x) => x.film).length;
+  const what = `${fb.length - films} photo${fb.length - films === 1 ? '' : 's'}${films ? `, ${films} film${films === 1 ? '' : 's'}` : ''}`;
+  const sameSet = fa.length === fb.length && fa.every((x) => fb.some((y) => deepEqual(x, y)));
+  lines.push(sameSet ? 'Gallery: photos and films reordered' : `Gallery: now ${what}`);
 }
 
 function diffPage(a, b) {
@@ -128,7 +142,8 @@ function diffPage(a, b) {
   }
   const ha = (a.hours || []).map((h) => `${h.label}: ${h.value}`);
   const hb = (b.hours || []).map((h) => `${h.label}: ${h.value}`);
-  if (!deepEqual(ha, hb)) {
+  if (ha.length && !hb.length) lines.push('Hours card removed');
+  else if (!deepEqual(ha, hb)) {
     const am = byName(a.hours, 'label');
     for (const h of b.hours || []) {
       const old = am.get(h.label);
@@ -138,7 +153,8 @@ function diffPage(a, b) {
     for (const h of a.hours || []) if (!(b.hours || []).some((x) => x.label === h.label)) lines.push(`Row removed: ${h.label}`);
   }
   if (!deepEqual(a.qr || null, b.qr || null)) lines.push(b.qr ? (a.qr ? 'QR link changed' : 'QR link added') : 'QR link removed');
-  if (!deepEqual(a.images || [], b.images || [])) lines.push(`Gallery: now ${(b.images || []).length} photos`);
+  if (a.type === 'gallery' || b.type === 'gallery') diffGallery(a, b, lines);
+  else if (!deepEqual(a.images || [], b.images || [])) lines.push(`Gallery: now ${(b.images || []).length} photos`);
   if (a.sections || b.sections) diffMenu(a, b, lines);
   if (a.items || b.items) diffList(a, b, lines);
   diffStage2(a, b, lines);

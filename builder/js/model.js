@@ -144,12 +144,15 @@ export const model = {
     };
     for (const { page } of this.pages(doc)) {
       add(page.image, page.id, page.id === 'home' ? 'Home background' : 'Strip and background');
-      for (const src of page.images || []) add(src, page.id, 'Gallery photo');
+      // A gallery with films lists its frames once, from its slides (its images are the same stills).
+      const galleryFrames = page.type === 'gallery' && (page.slides || []).length;
+      if (!galleryFrames) for (const src of page.images || []) add(src, page.id, 'Gallery photo');
       for (const item of page.items || []) add(item.image, page.id, `Card: ${item.title}`);
       (page.photos || []).forEach((ph, i) => add(ph.image, page.id, `Photo frame ${i + 1}`));
       (page.films || []).forEach((f) => { add(f.film, page.id, `Film: ${f.title || 'untitled'}`); add(f.poster, page.id, `Poster for film: ${f.title || 'untitled'}`); });
       if (page.backgroundFilm) { add(page.backgroundFilm.film, page.id, 'Background film'); add(page.backgroundFilm.poster, page.id, 'Background film poster'); }
-      (page.slides || []).forEach((sl, i) => { add(sl.image, page.id, `Slide ${i + 1}`); add(sl.film, page.id, `Slide ${i + 1} (film)`); add(sl.poster, page.id, `Slide ${i + 1} poster`); });
+      if (galleryFrames) (page.slides || []).forEach((sl, i) => { add(sl.image, page.id, `Gallery photo ${i + 1}`); add(sl.film, page.id, `Gallery film ${i + 1}`); add(sl.poster, page.id, `Poster for gallery film ${i + 1}`); });
+      else (page.slides || []).forEach((sl, i) => { add(sl.image, page.id, `Slide ${i + 1}`); add(sl.film, page.id, `Slide ${i + 1} (film)`); add(sl.poster, page.id, `Slide ${i + 1} poster`); });
     }
     return uses;
   },
@@ -173,7 +176,8 @@ export function newPage(type, title, id) {
       page.subtitle = 'One line that sums it up';
       page.body = 'Two or three sentences. Short, confident, slightly theatrical.';
       page.facts = ['One thing worth knowing', 'Another'];
-      page.hours = [{ label: 'Open', value: '9:00am – 5:00pm' }];
+      // No hours card to start with: a made-up "Open 9:00am – 5:00pm" row
+      // went live on pages that never wanted one (Rhys, 9 Nov 2026).
       break;
     case 'menu':
       page.kicker = 'Sample menu';
@@ -229,6 +233,62 @@ export function movePage(doc, parentId, from, to) {
   if (!kids || from === to || from < 0 || from >= kids.length) return;
   const [p] = kids.splice(from, 1);
   kids.splice(Math.max(0, Math.min(to, kids.length)), 0, p);
+}
+
+/** True if a page of this type can hold pages inside it (every type but a finished page). */
+export const canHoldPages = (page) => !!page && page.type !== 'finished';
+
+/** Deepest level a page may sit at: Home is 0, a section 1. Home's "Add page under it" stops at pages on level 2, so pages reach level 3. */
+export const MAX_DEPTH = 3;
+
+/** How many levels of pages sit below `page` (0 for a page with nothing inside). */
+export function levelsBelow(page) {
+  const kids = page.children || [];
+  return kids.length ? 1 + Math.max(...kids.map(levelsBelow)) : 0;
+}
+
+/**
+ * Where page `id` may be moved to: Home and every page that can hold pages,
+ * except the page itself and anything inside it, and no deeper than "Add
+ * page under it" allows (the page and everything inside it must stay within
+ * MAX_DEPTH). Depth first, in tree order.
+ * Each entry: { id, title, path, depth, current } (`current` = its parent now).
+ */
+export function moveTargets(doc, id) {
+  const hit = findIn(doc, id);
+  if (!hit || !hit.parent) return [];
+  const below = levelsBelow(hit.page);
+  const out = [];
+  const walk = (page, path, depth) => {
+    if (page.id === id) return;                    // itself and everything inside it
+    const fits = depth + 1 + below <= MAX_DEPTH;
+    if (canHoldPages(page) && (fits || page.id === hit.parent.id)) out.push({ id: page.id, title: page.id === 'home' ? 'Home' : (page.title || '(untitled)'), path, depth, current: page.id === hit.parent.id, page });
+    for (const c of page.children || []) walk(c, [...path, c.title || '(untitled)'], depth + 1);
+  };
+  walk(doc.home, [], 0);
+  return out;
+}
+
+/**
+ * Moves page `id` (and everything inside it) into `newParentId`, at `at` or
+ * the end. Keeps its id. Returns { fromParentId, fromIndex } to put it back,
+ * or null if the move is not allowed (into itself, into a page inside it,
+ * into a finished page, or nowhere new).
+ */
+export function reparentPage(doc, id, newParentId, at) {
+  const hit = findIn(doc, id);
+  const target = findIn(doc, newParentId);
+  if (!hit || !hit.parent || !target || !canHoldPages(target.page)) return null;
+  if (hit.parent.id === newParentId && at === undefined) return null;
+  if (findIn({ home: hit.page }, newParentId)) return null;   // itself or inside itself
+  if (hit.parent.id !== newParentId && !moveTargets(doc, id).some((t) => t.id === newParentId)) return null;   // too deep
+  const fromParentId = hit.parent.id;
+  const fromIndex = hit.parent.children.indexOf(hit.page);
+  hit.parent.children.splice(fromIndex, 1);
+  target.page.children = target.page.children || [];
+  const kids = target.page.children;
+  kids.splice(at === undefined ? kids.length : Math.max(0, Math.min(at, kids.length)), 0, hit.page);
+  return { fromParentId, fromIndex };
 }
 
 export function addPage(doc, parentId, page, at) {

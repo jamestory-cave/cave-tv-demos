@@ -292,3 +292,17 @@ table.dishes tr.drop-after td { box-shadow: 0 3px 0 var(--accent) inset; }
 .guide table.recipes thead th { font-weight: 700; }
 .guide table.recipes tbody th { font-weight: 600; white-space: nowrap; width: 1%; }
 .guide table.recipes td { width: 50%; }
+
+/* ---- Rhys's requests (9 Nov 2026): large preview, Move to…, card QR ---- */
+.btn.on { background: #eef2fb; border-color: var(--accent); color: var(--accent); }
+.editor.big .rail { display: none; }
+.editor.big .side { width: 330px; }
+.editor.big .centre { padding: 10px 16px; }
+.editor.big .tv-host { max-width: calc((100vh - 200px) * 16 / 9); margin: 0 auto; }
+.move-list { max-height: 50vh; overflow: auto; border: 1px solid var(--line); border-radius: 6px; margin: 10px 0; }
+.move-opt { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--line-2); cursor: pointer; }
+.move-opt:last-child { border-bottom: 0; }
+.move-opt:hover { background: #f7f8fa; }
+.move-opt.current { cursor: default; color: var(--muted); }
+.move-opt input:checked + span b { color: var(--accent); }
+.card-qr { border-top: 1px dashed var(--line); padding-top: 8px; }

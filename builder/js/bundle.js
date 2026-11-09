@@ -4,8 +4,12 @@
 // Stage-2 fields (PROTOTYPE.md: description, photos, films, backgroundFilm,
 // slides) are emitted only when set, so a stage-1 bundle is byte-for-byte
 // what it was.
+// Rhys's requests (docs/builder/2026-11-rhys-requests.md), same rules:
+// hoursTitle, childrenTitle, ListItem.qr, and slides on gallery pages (with
+// `images` kept filled with the frames' stills so an older app still shows
+// a photo gallery).
 
-const PAGE_KEYS = ['id', 'type', 'title', 'subtitle', 'kicker', 'image', 'body', 'facts', 'hours', 'qr', 'children', 'sections', 'images', 'items',
+const PAGE_KEYS = ['id', 'type', 'title', 'subtitle', 'kicker', 'image', 'body', 'facts', 'hoursTitle', 'hours', 'qr', 'childrenTitle', 'children', 'sections', 'images', 'items',
   'description', 'photos', 'films', 'backgroundFilm', 'slides'];
 const HOTEL_KEYS = ['name', 'tagline', 'reception', 'roomService', 'wifiName', 'wifiPassword', 'checkout'];
 
@@ -14,13 +18,17 @@ export const ALLOWS = {
   photos: ['info', 'hub', 'list', 'contact'],
   films: ['info', 'hub', 'list', 'contact', 'menu'],
   backgroundFilm: ['info', 'hub', 'list', 'contact', 'menu'],
-  slides: ['finished'],
+  slides: ['finished', 'gallery'],
   description: ['finished'],
+  hoursTitle: ['info', 'menu'],
+  childrenTitle: ['info', 'hub', 'menu', 'gallery', 'list', 'contact'],
 };
 const allows = (key, type) => ALLOWS[key].includes(type);
 
 const present = (v) => !(v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0));
 const str = (v) => (present(v) ? String(v) : undefined);
+/** A heading: left out when empty or only spaces. */
+const heading = (v) => (present(v) && String(v).trim() ? String(v) : undefined);
 
 function cleanHours(rows) {
   return (rows || []).filter((h) => present(h.label) || present(h.value)).map((h) => ({ label: h.label || '', value: h.value || '' }));
@@ -53,6 +61,8 @@ function cleanItems(items) {
     if (present(it.body)) out.body = it.body;
     if (present(it.image)) out.image = it.image;
     if (present(it.meta)) out.meta = it.meta;
+    const qr = cleanQR(it.qr);
+    if (qr) out.qr = qr;
     return out;
   });
 }
@@ -92,6 +102,12 @@ function cleanSlides(slides) {
   }).filter(Boolean);
 }
 
+/** The heading over a page's child tiles, where the page type draws one. */
+const childrenHeading = (page) => (allows('childrenTitle', page.type) ? heading(page.childrenTitle) : undefined);
+
+/** What a gallery frame shows before anything plays: the photo, or a film's poster. */
+export const frameStill = (s) => (s && (s.image || s.poster)) || null;
+
 /** One page in bundle shape, or null if it must be left out. */
 export function cleanPage(page, held = null) {
   if (page.hidden) return null;
@@ -117,6 +133,17 @@ export function cleanPage(page, held = null) {
     backgroundFilm: allows('backgroundFilm', page.type) ? cleanBackgroundFilm(page.backgroundFilm) : undefined,
     slides: allows('slides', page.type) ? cleanSlides(page.slides) : undefined,
   };
+  const hours = raw.hours;
+  // A heading with nothing under it is left out.
+  raw.hoursTitle = allows('hoursTitle', page.type) && hours.length ? heading(page.hoursTitle) : undefined;
+  raw.childrenTitle = raw.children.length ? childrenHeading(page) : undefined;
+  // A gallery with frames: `images` always carries their stills, so an app
+  // that does not know `slides` still shows every frame as a photo. Frames
+  // that are all photos are published as plain `images`, as before.
+  if (page.type === 'gallery' && raw.slides && raw.slides.length) {
+    if (raw.slides.some((s) => s.film)) raw.images = raw.slides.map(frameStill).filter(Boolean);
+    else { raw.images = raw.slides.map((s) => s.image); raw.slides = undefined; }
+  }
   const out = {};
   for (const k of PAGE_KEYS) if (present(raw[k])) out[k] = raw[k];
   return out;
@@ -166,7 +193,11 @@ export function buildBundle(doc, { revision, held, published } = {}) {
     }
     const flat = cleanPage({ ...page, children: [] }) || { id: page.id, type: page.type, title: page.title || '' };
     const kids = (page.children || []).map(build).filter(Boolean);
-    if (kids.length) flat.children = kids;
+    if (kids.length) {
+      flat.children = kids;
+      const t = childrenHeading(page);   // no tiles, no heading over them
+      if (t) flat.childrenTitle = t;
+    }
     const out = {};
     for (const k of PAGE_KEYS) if (k in flat) out[k] = flat[k];
     return out;
