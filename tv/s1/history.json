@@ -1,5 +1,15 @@
 [
   {
+    "revision": 34,
+    "bundle": "bundles/34-3a267d21.json",
+    "publishedAt": "2026-11-10T17:25:27Z",
+    "by": "Rhys",
+    "summary": [
+      "Your Room - The Penthouse: Hours heading: nothing → \"KEY TIMINGS\"",
+      "Pool, Gym & Treatments › In Room Treatments: Subtitle: \"One line that sums it up\" → nothing"
+    ]
+  },
+  {
     "revision": 33,
     "bundle": "bundles/33-348eb0ca.json",
     "publishedAt": "2026-11-10T17:20:24Z",
@@ -233,15 +243,6 @@
       "Your Room - The Penthouse › The Penthouse › Savant: New fact: TV CONTROL : Control the Penthouse TV from the Savant syste…",
       "Your Room - The Penthouse › The Penthouse › Savant: New fact: AUDIO CONTROL : Manage the room’s audio from the same syste…",
       "Your Room - The Penthouse › The Penthouse › Savant: Fact removed: this is the first page we have made"
-    ]
-  },
-  {
-    "revision": 14,
-    "bundle": "bundles/14-7abdde22.json",
-    "publishedAt": "2026-10-13T11:27:18Z",
-    "by": "Rhys",
-    "summary": [
-      "Your Room - The Penthouse: Film added: Penthouse Clip 7 NA (7 s)"
     ]
   }
 ]
