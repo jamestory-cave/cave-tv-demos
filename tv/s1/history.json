@@ -1,5 +1,15 @@
 [
   {
+    "revision": 35,
+    "bundle": "bundles/35-dce9ca72.json",
+    "publishedAt": "2026-11-11T10:38:57Z",
+    "by": "Rhys",
+    "summary": [
+      "Your Room - The Penthouse: Film added: Welcome to the Penthouse (81 s)",
+      "Your Room - The Penthouse: Film removed: Welcome to the Penthouse"
+    ]
+  },
+  {
     "revision": 34,
     "bundle": "bundles/34-3a267d21.json",
     "publishedAt": "2026-11-10T17:25:27Z",
@@ -229,20 +239,6 @@
       "Your Room - The Penthouse: Breakfast: 7:00 – 10:30am → 7:00 – 11:45am",
       "Your Room - The Penthouse › Our Rooms & Suites: Title: \"Our Suites\" → \"Our Rooms & Suites\"",
       "Your Room - The Penthouse › Our Rooms & Suites: Small caps line: \"Rooms & suites\" → \"EXPLORE CAVE ROOMS & SUITES\""
-    ]
-  },
-  {
-    "revision": 15,
-    "bundle": "bundles/15-3688ae87.json",
-    "publishedAt": "2026-10-13T11:39:26Z",
-    "by": "Rhys",
-    "summary": [
-      "Your Room - The Penthouse › The Penthouse › Savant: Small caps line: \"Room Automation\" → \"SMART ENTERTAINMENT\"",
-      "Your Room - The Penthouse › The Penthouse › Savant: Subtitle: \"One line that sums it up\" → \"Entertainment at your fingertips.\"",
-      "Your Room - The Penthouse › The Penthouse › Savant: Text changed (127 characters)",
-      "Your Room - The Penthouse › The Penthouse › Savant: New fact: TV CONTROL : Control the Penthouse TV from the Savant syste…",
-      "Your Room - The Penthouse › The Penthouse › Savant: New fact: AUDIO CONTROL : Manage the room’s audio from the same syste…",
-      "Your Room - The Penthouse › The Penthouse › Savant: Fact removed: this is the first page we have made"
     ]
   }
 ]
