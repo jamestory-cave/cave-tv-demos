@@ -1,5 +1,14 @@
 [
   {
+    "revision": 39,
+    "bundle": "bundles/39-73da92b1.json",
+    "publishedAt": "2026-11-18T14:42:52Z",
+    "by": "Rhys",
+    "summary": [
+      "Golf › Driving Range: Fact 1: TOKENS ARE AVAILABLE FROM THE PRO SHOP → Tokens are available from the pro shop"
+    ]
+  },
+  {
     "revision": 38,
     "bundle": "bundles/38-65f806d9.json",
     "publishedAt": "2026-11-18T14:20:00Z",
@@ -214,15 +223,6 @@
     "by": "Rhys",
     "summary": [
       "Eat & Drink › Breakfast › Breakfast Menu: New menu page"
-    ]
-  },
-  {
-    "revision": 19,
-    "bundle": "bundles/19-0dc42e38.json",
-    "publishedAt": "2026-10-13T12:32:53Z",
-    "by": "Rhys",
-    "summary": [
-      "Eat & Drink › The Deck: QR link added"
     ]
   }
 ]
