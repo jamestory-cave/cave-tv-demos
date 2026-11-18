@@ -66,6 +66,9 @@ async function makeSizes(source, width, height, quality, sizes = SIZES) {
   return blobs;
 }
 
+/** The widths a photo record has: its in-memory copies, or (from the Cave server) its listed sizes. */
+const sizesOf = (rec) => (rec.blobs ? Object.keys(rec.blobs) : (rec.sizes || [])).map(Number);
+
 const cleanName = (name, fallback) => (name || fallback).replace(/\.[a-z0-9]+$/i, '').replace(/[-_]+/g, ' ').trim().slice(0, 40) || fallback;
 
 /**
@@ -344,7 +347,7 @@ export class MediaRegistry {
     for (const rec of local) {
       if (this.index.media[rec.hash] || this.index.films[rec.hash]) {
         // Already published (perhaps from another session): drop the local copy.
-        await this.browser.deleteMedia(rec.hash);
+        try { await this.browser.deleteMedia(rec.hash); } catch { /* the server keeps published files; nothing to drop */ }
         continue;
       }
       this.pending.set(rec.hash, rec);
@@ -352,8 +355,10 @@ export class MediaRegistry {
   }
 
   async add(record) {
-    this.pending.set(record.hash, record);
+    // Stored first (this browser, or the Cave server), then listed, so a failed
+    // upload never leaves a photo in Media that is not really there.
     await this.browser.putMedia(record);
+    this.pending.set(record.hash, record);
   }
 
   async remove(hash) {
@@ -371,7 +376,7 @@ export class MediaRegistry {
       const rec = this.pending.get(h);
       if (!rec) continue;
       if (rec.kind === 'film') this.index.films[h] = this.index.films[h] || filmMeta(rec);
-      else this.index.media[h] = this.index.media[h] || { name: rec.name, width: rec.width, height: rec.height, sizes: Object.keys(rec.blobs || {}).map(Number), poster: rec.poster || undefined };
+      else this.index.media[h] = this.index.media[h] || { name: rec.name, width: rec.width, height: rec.height, sizes: sizesOf(rec), poster: rec.poster || undefined };
       // The local copy stays until the next load: Pages takes a minute to
       // serve the new files, and the preview keeps working meanwhile.
       rec.published = true;
@@ -389,7 +394,7 @@ export class MediaRegistry {
     const p = parseMediaPath(src) || parseMediaPath(this.assetPath(src) || '');
     if (!p || p.kind !== 'photo') return src;
     const rec = this.pending.get(p.hash);
-    const sizes = rec ? Object.keys(rec.blobs || {}).map(Number) : (this.index.media[p.hash]?.sizes || []);
+    const sizes = rec ? sizesOf(rec) : (this.index.media[p.hash]?.sizes || []);
     return slidePathFor(p.hash, sizes);
   }
 
@@ -402,7 +407,7 @@ export class MediaRegistry {
     }
     for (const rec of this.pending.values()) {
       if (rec.kind === 'film' || this.index.media[rec.hash]) continue;
-      out.push({ hash: rec.hash, path: mediaPath(rec.hash), source: 'pending', name: rec.name, width: rec.width, height: rec.height, bytes: rec.bytes, addedAt: rec.addedAt, poster: rec.poster || false, sizes: Object.keys(rec.blobs || {}).map(Number) });
+      out.push({ hash: rec.hash, path: mediaPath(rec.hash), source: 'pending', name: rec.name, width: rec.width, height: rec.height, bytes: rec.bytes, addedAt: rec.addedAt, poster: rec.poster || false, sizes: sizesOf(rec) });
     }
     return out;
   }
@@ -453,7 +458,7 @@ export class MediaRegistry {
       const meta = rec?.kind === 'film' ? rec : this.index.films[p.hash];
       return !!meta && (!meta.height || meta.height === p.height);
     }
-    if (rec && rec.kind !== 'film') return !!rec.blobs?.[p.width];
+    if (rec && rec.kind !== 'film') return sizesOf(rec).includes(p.width);
     const meta = this.index.media[p.hash];
     if (!meta) return false;
     return (meta.sizes || SIZES).map(Number).includes(p.width);

@@ -1,0 +1,1443 @@
+{
+ "about": "Shared case for room-specific content (QA-1, QA-2, QA-3, QA-9: a room version that only moves cards keeps the type card QR on its card; one that sets the card QR itself keeps its own): a version that moves and removes cards, card QR values by type and by room, a Wi-Fi and an http QR in page versions, links with a query straight after the host and in capitals. Made with the Builder (overrides.js). selftest.html checks the Builder still resolves it to exactly this; builder/server/tests/test_overrides.py checks the server compiles each case to exactly the bundle Preview as shows. Regenerate both together if the rules change on purpose.",
+ "draft": {
+  "version": 1,
+  "hotel": {
+   "name": "Example Hotel",
+   "tagline": "",
+   "reception": "Dial 0",
+   "roomService": "Dial 1",
+   "wifiName": "Guest",
+   "wifiPassword": "",
+   "checkout": "11:00am"
+  },
+  "home": {
+   "id": "home",
+   "type": "home",
+   "title": "Home",
+   "children": [
+    {
+     "id": "room",
+     "type": "info",
+     "title": "Your Room",
+     "kicker": "In your room",
+     "image": "hero-eat",
+     "body": "Welcome.",
+     "qr": {
+      "label": "Join the guest Wi-Fi",
+      "url": "WIFI:T:nopass;S:Example Guest;;"
+     }
+    },
+    {
+     "id": "whatson",
+     "type": "list",
+     "title": "What's On",
+     "image": "hero-eat",
+     "items": [
+      {
+       "id": "card-a",
+       "title": "Tasting menu",
+       "qr": {
+        "label": "Book the tasting",
+        "url": "https://example.com/tasting/"
+       }
+      },
+      {
+       "id": "card-b",
+       "title": "Afternoon tea",
+       "qr": {
+        "label": "Book tea",
+        "url": "https://example.com/tea/"
+       }
+      },
+      {
+       "id": "card-c",
+       "title": "Spa day"
+      }
+     ]
+    },
+    {
+     "id": "roomservice",
+     "type": "info",
+     "title": "Room Service",
+     "image": "hero-eat",
+     "body": "Order to your room.",
+     "qr": {
+      "label": "Order",
+      "url": "https://example.com/order/"
+     }
+    },
+    {
+     "id": "explore",
+     "type": "list",
+     "title": "Explore",
+     "image": "hero-eat",
+     "items": [
+      {
+       "id": "card-x",
+       "title": "Cathedral",
+       "qr": {
+        "label": "Tickets",
+        "url": "https://example.com/cathedral/"
+       }
+      },
+      {
+       "id": "card-y",
+       "title": "Harbour",
+       "qr": {
+        "label": "Boat trips",
+        "url": "https://example.com/harbour/"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  "overrides": {
+   "whatson": {
+    "page": {
+     "by": "type",
+     "versions": {
+      "6": {
+       "items": [
+        {
+         "id": "card-b",
+         "title": "Afternoon tea",
+         "qr": {
+          "label": "Tea in your suite",
+          "url": "https://example.com/tea/"
+         }
+        },
+        {
+         "id": "card-a",
+         "title": "Tasting menu",
+         "qr": {
+          "label": "Book the tasting",
+          "url": "https://example.com/tasting/"
+         }
+        },
+        {
+         "id": "card-c",
+         "title": "Spa day"
+        }
+       ]
+      },
+      "7": {
+       "items": [
+        {
+         "id": "card-a",
+         "title": "Tasting menu",
+         "qr": {
+          "label": "Book the tasting",
+          "url": "https://example.com/tasting/"
+         }
+        },
+        {
+         "id": "card-c",
+         "title": "Spa day"
+        }
+       ]
+      }
+     }
+    },
+    "fields": {
+     "items/card-b/qr": {
+      "by": "type",
+      "values": {
+       "3": {
+        "url": "HTTPS://Example.COM/tea/cave",
+        "label": "Tea for Cave Rooms"
+       },
+       "6": {
+        "url": "https://example.com/tea/penthouse"
+       },
+       "7": {
+        "url": "https://example.com/tea/seven"
+       }
+      }
+     },
+     "items/card-c/qr": {
+      "by": "room",
+      "values": {
+       "307": {
+        "url": "https://example.com/spa?room=307"
+       }
+      }
+     }
+    }
+   },
+   "room": {
+    "page": {
+     "by": "type",
+     "versions": {
+      "3": {
+       "qr": {
+        "label": "Scan to join the Wi-Fi",
+        "url": "WIFI:T:nopass;S:Example Guest;;"
+       }
+      },
+      "6": {
+       "qr": {
+        "label": "Penthouse network",
+        "url": "http://example.com/wifi"
+       },
+       "title": "The Penthouse"
+      }
+     }
+    }
+   },
+   "explore": {
+    "page": {
+     "by": "room",
+     "versions": {
+      "101": {
+       "items": [
+        {
+         "id": "card-y",
+         "title": "Harbour",
+         "qr": {
+          "label": "Boat trips",
+          "url": "https://example.com/harbour/"
+         }
+        },
+        {
+         "id": "card-x",
+         "title": "Cathedral",
+         "qr": {
+          "label": "Tickets",
+          "url": "https://example.com/cathedral/"
+         }
+        }
+       ]
+      },
+      "102": {
+       "items": [
+        {
+         "id": "card-x",
+         "title": "Cathedral",
+         "qr": {
+          "label": "Tickets",
+          "url": "https://example.com/cathedral/"
+         }
+        },
+        {
+         "id": "card-y",
+         "title": "Harbour",
+         "qr": {
+          "label": "Room 102 boat",
+          "url": "https://example.com/harbour/102"
+         }
+        }
+       ]
+      }
+     }
+    },
+    "fields": {
+     "items/card-y/qr": {
+      "by": "type",
+      "values": {
+       "3": {
+        "url": "https://example.com/harbour/cave"
+       }
+      }
+     }
+    }
+   },
+   "roomservice": {
+    "fields": {
+     "qr": {
+      "by": "room",
+      "values": {
+       "101": {
+        "url": "https://order.example.com?room=101"
+       },
+       "102": {
+        "url": "HTTPS://ORDER.EXAMPLE.COM/R/102"
+       },
+       "307": {
+        "url": "https://order.example.com#307",
+        "label": "Order to the Penthouse"
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "rooms": [
+  {
+   "number": "101",
+   "type_id": 3
+  },
+  {
+   "number": "102",
+   "type_id": 3
+  },
+  {
+   "number": "307",
+   "type_id": 6
+  },
+  {
+   "number": "308",
+   "type_id": 7
+  },
+  {
+   "number": "309",
+   "type_id": null
+  }
+ ],
+ "record": {
+  "entries": [
+   {
+    "page": "whatson",
+    "field": "page",
+    "by": "type",
+    "path": [],
+    "values": {
+     "6": {
+      "items": [
+       {
+        "title": "Afternoon tea",
+        "qr": {
+         "label": "Tea in your suite",
+         "url": "https://example.com/tea/"
+        }
+       },
+       {
+        "title": "Tasting menu",
+        "qr": {
+         "label": "Book the tasting",
+         "url": "https://example.com/tasting/"
+        }
+       },
+       {
+        "title": "Spa day"
+       }
+      ]
+     },
+     "7": {
+      "items": [
+       {
+        "title": "Tasting menu",
+        "qr": {
+         "label": "Book the tasting",
+         "url": "https://example.com/tasting/"
+        }
+       },
+       {
+        "title": "Spa day"
+       }
+      ]
+     }
+    },
+    "cards": {
+     "6": [
+      "card-b",
+      "card-a",
+      "card-c"
+     ],
+     "7": [
+      "card-a",
+      "card-c"
+     ]
+    }
+   },
+   {
+    "page": "whatson",
+    "field": "items/card-b/qr",
+    "by": "type",
+    "path": [
+     "items",
+     1,
+     "qr"
+    ],
+    "values": {
+     "3": {
+      "label": "Tea for Cave Rooms",
+      "url": "https://example.com/tea/cave"
+     },
+     "6": {
+      "url": "https://example.com/tea/penthouse"
+     },
+     "7": {
+      "url": "https://example.com/tea/seven"
+     }
+    },
+    "card": "card-b"
+   },
+   {
+    "page": "whatson",
+    "field": "items/card-c/qr",
+    "by": "room",
+    "path": [
+     "items",
+     2,
+     "qr"
+    ],
+    "values": {
+     "307": {
+      "url": "https://example.com/spa?room=307"
+     }
+    },
+    "card": "card-c"
+   },
+   {
+    "page": "room",
+    "field": "page",
+    "by": "type",
+    "path": [],
+    "values": {
+     "3": {
+      "qr": {
+       "label": "Scan to join the Wi-Fi",
+       "url": "WIFI:T:nopass;S:Example Guest;;"
+      }
+     },
+     "6": {
+      "title": "The Penthouse",
+      "qr": {
+       "label": "Penthouse network",
+       "url": "http://example.com/wifi"
+      }
+     }
+    }
+   },
+   {
+    "page": "explore",
+    "field": "page",
+    "by": "room",
+    "path": [],
+    "values": {
+     "101": {
+      "items": [
+       {
+        "title": "Harbour",
+        "qr": {
+         "label": "Boat trips",
+         "url": "https://example.com/harbour/"
+        }
+       },
+       {
+        "title": "Cathedral",
+        "qr": {
+         "label": "Tickets",
+         "url": "https://example.com/cathedral/"
+        }
+       }
+      ]
+     },
+     "102": {
+      "items": [
+       {
+        "title": "Cathedral",
+        "qr": {
+         "label": "Tickets",
+         "url": "https://example.com/cathedral/"
+        }
+       },
+       {
+        "title": "Harbour",
+        "qr": {
+         "label": "Room 102 boat",
+         "url": "https://example.com/harbour/102"
+        }
+       }
+      ]
+     }
+    },
+    "cards": {
+     "101": [
+      "card-y",
+      "card-x"
+     ],
+     "102": [
+      "card-x",
+      "card-y"
+     ]
+    }
+   },
+   {
+    "page": "explore",
+    "field": "items/card-y/qr",
+    "by": "type",
+    "path": [
+     "items",
+     1,
+     "qr"
+    ],
+    "values": {
+     "3": {
+      "url": "https://example.com/harbour/cave"
+     }
+    },
+    "card": "card-y"
+   },
+   {
+    "page": "roomservice",
+    "field": "qr",
+    "by": "room",
+    "path": [
+     "qr"
+    ],
+    "values": {
+     "101": {
+      "url": "https://order.example.com?room=101"
+     },
+     "102": {
+      "url": "https://order.example.com/R/102"
+     },
+     "307": {
+      "label": "Order to the Penthouse",
+      "url": "https://order.example.com#307"
+     }
+    }
+   }
+  ],
+  "draft": {
+   "whatson": {
+    "page": {
+     "by": "type",
+     "versions": {
+      "6": {
+       "items": [
+        {
+         "id": "card-b",
+         "title": "Afternoon tea",
+         "qr": {
+          "label": "Tea in your suite",
+          "url": "https://example.com/tea/"
+         }
+        },
+        {
+         "id": "card-a",
+         "title": "Tasting menu",
+         "qr": {
+          "label": "Book the tasting",
+          "url": "https://example.com/tasting/"
+         }
+        },
+        {
+         "id": "card-c",
+         "title": "Spa day"
+        }
+       ]
+      },
+      "7": {
+       "items": [
+        {
+         "id": "card-a",
+         "title": "Tasting menu",
+         "qr": {
+          "label": "Book the tasting",
+          "url": "https://example.com/tasting/"
+         }
+        },
+        {
+         "id": "card-c",
+         "title": "Spa day"
+        }
+       ]
+      }
+     }
+    },
+    "fields": {
+     "items/card-b/qr": {
+      "by": "type",
+      "values": {
+       "3": {
+        "url": "HTTPS://Example.COM/tea/cave",
+        "label": "Tea for Cave Rooms"
+       },
+       "6": {
+        "url": "https://example.com/tea/penthouse"
+       },
+       "7": {
+        "url": "https://example.com/tea/seven"
+       }
+      }
+     },
+     "items/card-c/qr": {
+      "by": "room",
+      "values": {
+       "307": {
+        "url": "https://example.com/spa?room=307"
+       }
+      }
+     }
+    }
+   },
+   "room": {
+    "page": {
+     "by": "type",
+     "versions": {
+      "3": {
+       "qr": {
+        "label": "Scan to join the Wi-Fi",
+        "url": "WIFI:T:nopass;S:Example Guest;;"
+       }
+      },
+      "6": {
+       "qr": {
+        "label": "Penthouse network",
+        "url": "http://example.com/wifi"
+       },
+       "title": "The Penthouse"
+      }
+     }
+    }
+   },
+   "explore": {
+    "page": {
+     "by": "room",
+     "versions": {
+      "101": {
+       "items": [
+        {
+         "id": "card-y",
+         "title": "Harbour",
+         "qr": {
+          "label": "Boat trips",
+          "url": "https://example.com/harbour/"
+         }
+        },
+        {
+         "id": "card-x",
+         "title": "Cathedral",
+         "qr": {
+          "label": "Tickets",
+          "url": "https://example.com/cathedral/"
+         }
+        }
+       ]
+      },
+      "102": {
+       "items": [
+        {
+         "id": "card-x",
+         "title": "Cathedral",
+         "qr": {
+          "label": "Tickets",
+          "url": "https://example.com/cathedral/"
+         }
+        },
+        {
+         "id": "card-y",
+         "title": "Harbour",
+         "qr": {
+          "label": "Room 102 boat",
+          "url": "https://example.com/harbour/102"
+         }
+        }
+       ]
+      }
+     }
+    },
+    "fields": {
+     "items/card-y/qr": {
+      "by": "type",
+      "values": {
+       "3": {
+        "url": "https://example.com/harbour/cave"
+       }
+      }
+     }
+    }
+   },
+   "roomservice": {
+    "fields": {
+     "qr": {
+      "by": "room",
+      "values": {
+       "101": {
+        "url": "https://order.example.com?room=101"
+       },
+       "102": {
+        "url": "HTTPS://ORDER.EXAMPLE.COM/R/102"
+       },
+       "307": {
+        "url": "https://order.example.com#307",
+        "label": "Order to the Penthouse"
+       }
+      }
+     }
+    }
+   }
+  },
+  "cards": {
+   "whatson": [
+    "card-a",
+    "card-b",
+    "card-c"
+   ],
+   "explore": [
+    "card-x",
+    "card-y"
+   ]
+  }
+ },
+ "blocked": [],
+ "unused": [
+  {
+   "pageId": "whatson",
+   "field": "items/card-b/qr",
+   "key": "7",
+   "by": "type",
+   "who": "room type 7",
+   "message": "room type 7 has a version of this page without this card, so this value is not shown there"
+  },
+  {
+   "pageId": "explore",
+   "field": "items/card-y/qr",
+   "key": "3",
+   "by": "type",
+   "who": "room 102",
+   "message": "room 102's own version of this page sets this card's QR code itself, so the room type's value is not shown there"
+  }
+ ],
+ "master": {
+  "version": 5,
+  "hotel": {
+   "name": "Example Hotel",
+   "tagline": "",
+   "reception": "Dial 0",
+   "roomService": "Dial 1",
+   "wifiName": "Guest",
+   "wifiPassword": "",
+   "checkout": "11:00am"
+  },
+  "home": {
+   "id": "home",
+   "type": "home",
+   "title": "Home",
+   "children": [
+    {
+     "id": "room",
+     "type": "info",
+     "title": "Your Room",
+     "kicker": "In your room",
+     "image": "hero-eat",
+     "body": "Welcome.",
+     "qr": {
+      "label": "Join the guest Wi-Fi",
+      "url": "WIFI:T:nopass;S:Example Guest;;"
+     }
+    },
+    {
+     "id": "whatson",
+     "type": "list",
+     "title": "What's On",
+     "image": "hero-eat",
+     "items": [
+      {
+       "title": "Tasting menu",
+       "qr": {
+        "label": "Book the tasting",
+        "url": "https://example.com/tasting/"
+       }
+      },
+      {
+       "title": "Afternoon tea",
+       "qr": {
+        "label": "Book tea",
+        "url": "https://example.com/tea/"
+       }
+      },
+      {
+       "title": "Spa day"
+      }
+     ]
+    },
+    {
+     "id": "roomservice",
+     "type": "info",
+     "title": "Room Service",
+     "image": "hero-eat",
+     "body": "Order to your room.",
+     "qr": {
+      "label": "Order",
+      "url": "https://example.com/order/"
+     }
+    },
+    {
+     "id": "explore",
+     "type": "list",
+     "title": "Explore",
+     "image": "hero-eat",
+     "items": [
+      {
+       "title": "Cathedral",
+       "qr": {
+        "label": "Tickets",
+        "url": "https://example.com/cathedral/"
+       }
+      },
+      {
+       "title": "Harbour",
+       "qr": {
+        "label": "Boat trips",
+        "url": "https://example.com/harbour/"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ },
+ "expected": [
+  {
+   "label": "master",
+   "typeId": null,
+   "room": null,
+   "bundle": {
+    "version": 5,
+    "hotel": {
+     "name": "Example Hotel",
+     "tagline": "",
+     "reception": "Dial 0",
+     "roomService": "Dial 1",
+     "wifiName": "Guest",
+     "wifiPassword": "",
+     "checkout": "11:00am"
+    },
+    "home": {
+     "id": "home",
+     "type": "home",
+     "title": "Home",
+     "children": [
+      {
+       "id": "room",
+       "type": "info",
+       "title": "Your Room",
+       "kicker": "In your room",
+       "image": "hero-eat",
+       "body": "Welcome.",
+       "qr": {
+        "label": "Join the guest Wi-Fi",
+        "url": "WIFI:T:nopass;S:Example Guest;;"
+       }
+      },
+      {
+       "id": "whatson",
+       "type": "list",
+       "title": "What's On",
+       "image": "hero-eat",
+       "items": [
+        {
+         "title": "Tasting menu",
+         "qr": {
+          "label": "Book the tasting",
+          "url": "https://example.com/tasting/"
+         }
+        },
+        {
+         "title": "Afternoon tea",
+         "qr": {
+          "label": "Book tea",
+          "url": "https://example.com/tea/"
+         }
+        },
+        {
+         "title": "Spa day"
+        }
+       ]
+      },
+      {
+       "id": "roomservice",
+       "type": "info",
+       "title": "Room Service",
+       "image": "hero-eat",
+       "body": "Order to your room.",
+       "qr": {
+        "label": "Order",
+        "url": "https://example.com/order/"
+       }
+      },
+      {
+       "id": "explore",
+       "type": "list",
+       "title": "Explore",
+       "image": "hero-eat",
+       "items": [
+        {
+         "title": "Cathedral",
+         "qr": {
+          "label": "Tickets",
+          "url": "https://example.com/cathedral/"
+         }
+        },
+        {
+         "title": "Harbour",
+         "qr": {
+          "label": "Boat trips",
+          "url": "https://example.com/harbour/"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "room 101",
+   "typeId": "3",
+   "room": "101",
+   "bundle": {
+    "version": 5,
+    "hotel": {
+     "name": "Example Hotel",
+     "tagline": "",
+     "reception": "Dial 0",
+     "roomService": "Dial 1",
+     "wifiName": "Guest",
+     "wifiPassword": "",
+     "checkout": "11:00am"
+    },
+    "home": {
+     "id": "home",
+     "type": "home",
+     "title": "Home",
+     "children": [
+      {
+       "id": "room",
+       "type": "info",
+       "title": "Your Room",
+       "kicker": "In your room",
+       "image": "hero-eat",
+       "body": "Welcome.",
+       "qr": {
+        "label": "Scan to join the Wi-Fi",
+        "url": "WIFI:T:nopass;S:Example Guest;;"
+       }
+      },
+      {
+       "id": "whatson",
+       "type": "list",
+       "title": "What's On",
+       "image": "hero-eat",
+       "items": [
+        {
+         "title": "Tasting menu",
+         "qr": {
+          "label": "Book the tasting",
+          "url": "https://example.com/tasting/"
+         }
+        },
+        {
+         "title": "Afternoon tea",
+         "qr": {
+          "label": "Tea for Cave Rooms",
+          "url": "https://example.com/tea/cave"
+         }
+        },
+        {
+         "title": "Spa day"
+        }
+       ]
+      },
+      {
+       "id": "roomservice",
+       "type": "info",
+       "title": "Room Service",
+       "image": "hero-eat",
+       "body": "Order to your room.",
+       "qr": {
+        "label": "Order",
+        "url": "https://order.example.com?room=101"
+       }
+      },
+      {
+       "id": "explore",
+       "type": "list",
+       "title": "Explore",
+       "image": "hero-eat",
+       "items": [
+        {
+         "title": "Harbour",
+         "qr": {
+          "label": "Boat trips",
+          "url": "https://example.com/harbour/cave"
+         }
+        },
+        {
+         "title": "Cathedral",
+         "qr": {
+          "label": "Tickets",
+          "url": "https://example.com/cathedral/"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "room 102",
+   "typeId": "3",
+   "room": "102",
+   "bundle": {
+    "version": 5,
+    "hotel": {
+     "name": "Example Hotel",
+     "tagline": "",
+     "reception": "Dial 0",
+     "roomService": "Dial 1",
+     "wifiName": "Guest",
+     "wifiPassword": "",
+     "checkout": "11:00am"
+    },
+    "home": {
+     "id": "home",
+     "type": "home",
+     "title": "Home",
+     "children": [
+      {
+       "id": "room",
+       "type": "info",
+       "title": "Your Room",
+       "kicker": "In your room",
+       "image": "hero-eat",
+       "body": "Welcome.",
+       "qr": {
+        "label": "Scan to join the Wi-Fi",
+        "url": "WIFI:T:nopass;S:Example Guest;;"
+       }
+      },
+      {
+       "id": "whatson",
+       "type": "list",
+       "title": "What's On",
+       "image": "hero-eat",
+       "items": [
+        {
+         "title": "Tasting menu",
+         "qr": {
+          "label": "Book the tasting",
+          "url": "https://example.com/tasting/"
+         }
+        },
+        {
+         "title": "Afternoon tea",
+         "qr": {
+          "label": "Tea for Cave Rooms",
+          "url": "https://example.com/tea/cave"
+         }
+        },
+        {
+         "title": "Spa day"
+        }
+       ]
+      },
+      {
+       "id": "roomservice",
+       "type": "info",
+       "title": "Room Service",
+       "image": "hero-eat",
+       "body": "Order to your room.",
+       "qr": {
+        "label": "Order",
+        "url": "https://order.example.com/R/102"
+       }
+      },
+      {
+       "id": "explore",
+       "type": "list",
+       "title": "Explore",
+       "image": "hero-eat",
+       "items": [
+        {
+         "title": "Cathedral",
+         "qr": {
+          "label": "Tickets",
+          "url": "https://example.com/cathedral/"
+         }
+        },
+        {
+         "title": "Harbour",
+         "qr": {
+          "label": "Room 102 boat",
+          "url": "https://example.com/harbour/102"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "room 307",
+   "typeId": "6",
+   "room": "307",
+   "bundle": {
+    "version": 5,
+    "hotel": {
+     "name": "Example Hotel",
+     "tagline": "",
+     "reception": "Dial 0",
+     "roomService": "Dial 1",
+     "wifiName": "Guest",
+     "wifiPassword": "",
+     "checkout": "11:00am"
+    },
+    "home": {
+     "id": "home",
+     "type": "home",
+     "title": "Home",
+     "children": [
+      {
+       "id": "room",
+       "type": "info",
+       "title": "The Penthouse",
+       "kicker": "In your room",
+       "image": "hero-eat",
+       "body": "Welcome.",
+       "qr": {
+        "label": "Penthouse network",
+        "url": "http://example.com/wifi"
+       }
+      },
+      {
+       "id": "whatson",
+       "type": "list",
+       "title": "What's On",
+       "image": "hero-eat",
+       "items": [
+        {
+         "title": "Afternoon tea",
+         "qr": {
+          "label": "Tea in your suite",
+          "url": "https://example.com/tea/penthouse"
+         }
+        },
+        {
+         "title": "Tasting menu",
+         "qr": {
+          "label": "Book the tasting",
+          "url": "https://example.com/tasting/"
+         }
+        },
+        {
+         "title": "Spa day",
+         "qr": {
+          "label": "",
+          "url": "https://example.com/spa?room=307"
+         }
+        }
+       ]
+      },
+      {
+       "id": "roomservice",
+       "type": "info",
+       "title": "Room Service",
+       "image": "hero-eat",
+       "body": "Order to your room.",
+       "qr": {
+        "label": "Order to the Penthouse",
+        "url": "https://order.example.com#307"
+       }
+      },
+      {
+       "id": "explore",
+       "type": "list",
+       "title": "Explore",
+       "image": "hero-eat",
+       "items": [
+        {
+         "title": "Cathedral",
+         "qr": {
+          "label": "Tickets",
+          "url": "https://example.com/cathedral/"
+         }
+        },
+        {
+         "title": "Harbour",
+         "qr": {
+          "label": "Boat trips",
+          "url": "https://example.com/harbour/"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "room 308",
+   "typeId": "7",
+   "room": "308",
+   "bundle": {
+    "version": 5,
+    "hotel": {
+     "name": "Example Hotel",
+     "tagline": "",
+     "reception": "Dial 0",
+     "roomService": "Dial 1",
+     "wifiName": "Guest",
+     "wifiPassword": "",
+     "checkout": "11:00am"
+    },
+    "home": {
+     "id": "home",
+     "type": "home",
+     "title": "Home",
+     "children": [
+      {
+       "id": "room",
+       "type": "info",
+       "title": "Your Room",
+       "kicker": "In your room",
+       "image": "hero-eat",
+       "body": "Welcome.",
+       "qr": {
+        "label": "Join the guest Wi-Fi",
+        "url": "WIFI:T:nopass;S:Example Guest;;"
+       }
+      },
+      {
+       "id": "whatson",
+       "type": "list",
+       "title": "What's On",
+       "image": "hero-eat",
+       "items": [
+        {
+         "title": "Tasting menu",
+         "qr": {
+          "label": "Book the tasting",
+          "url": "https://example.com/tasting/"
+         }
+        },
+        {
+         "title": "Spa day"
+        }
+       ]
+      },
+      {
+       "id": "roomservice",
+       "type": "info",
+       "title": "Room Service",
+       "image": "hero-eat",
+       "body": "Order to your room.",
+       "qr": {
+        "label": "Order",
+        "url": "https://example.com/order/"
+       }
+      },
+      {
+       "id": "explore",
+       "type": "list",
+       "title": "Explore",
+       "image": "hero-eat",
+       "items": [
+        {
+         "title": "Cathedral",
+         "qr": {
+          "label": "Tickets",
+          "url": "https://example.com/cathedral/"
+         }
+        },
+        {
+         "title": "Harbour",
+         "qr": {
+          "label": "Boat trips",
+          "url": "https://example.com/harbour/"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "room 309",
+   "typeId": null,
+   "room": "309",
+   "bundle": {
+    "version": 5,
+    "hotel": {
+     "name": "Example Hotel",
+     "tagline": "",
+     "reception": "Dial 0",
+     "roomService": "Dial 1",
+     "wifiName": "Guest",
+     "wifiPassword": "",
+     "checkout": "11:00am"
+    },
+    "home": {
+     "id": "home",
+     "type": "home",
+     "title": "Home",
+     "children": [
+      {
+       "id": "room",
+       "type": "info",
+       "title": "Your Room",
+       "kicker": "In your room",
+       "image": "hero-eat",
+       "body": "Welcome.",
+       "qr": {
+        "label": "Join the guest Wi-Fi",
+        "url": "WIFI:T:nopass;S:Example Guest;;"
+       }
+      },
+      {
+       "id": "whatson",
+       "type": "list",
+       "title": "What's On",
+       "image": "hero-eat",
+       "items": [
+        {
+         "title": "Tasting menu",
+         "qr": {
+          "label": "Book the tasting",
+          "url": "https://example.com/tasting/"
+         }
+        },
+        {
+         "title": "Afternoon tea",
+         "qr": {
+          "label": "Book tea",
+          "url": "https://example.com/tea/"
+         }
+        },
+        {
+         "title": "Spa day"
+        }
+       ]
+      },
+      {
+       "id": "roomservice",
+       "type": "info",
+       "title": "Room Service",
+       "image": "hero-eat",
+       "body": "Order to your room.",
+       "qr": {
+        "label": "Order",
+        "url": "https://example.com/order/"
+       }
+      },
+      {
+       "id": "explore",
+       "type": "list",
+       "title": "Explore",
+       "image": "hero-eat",
+       "items": [
+        {
+         "title": "Cathedral",
+         "qr": {
+          "label": "Tickets",
+          "url": "https://example.com/cathedral/"
+         }
+        },
+        {
+         "title": "Harbour",
+         "qr": {
+          "label": "Boat trips",
+          "url": "https://example.com/harbour/"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "type 6 only",
+   "typeId": "6",
+   "room": null,
+   "bundle": {
+    "version": 5,
+    "hotel": {
+     "name": "Example Hotel",
+     "tagline": "",
+     "reception": "Dial 0",
+     "roomService": "Dial 1",
+     "wifiName": "Guest",
+     "wifiPassword": "",
+     "checkout": "11:00am"
+    },
+    "home": {
+     "id": "home",
+     "type": "home",
+     "title": "Home",
+     "children": [
+      {
+       "id": "room",
+       "type": "info",
+       "title": "The Penthouse",
+       "kicker": "In your room",
+       "image": "hero-eat",
+       "body": "Welcome.",
+       "qr": {
+        "label": "Penthouse network",
+        "url": "http://example.com/wifi"
+       }
+      },
+      {
+       "id": "whatson",
+       "type": "list",
+       "title": "What's On",
+       "image": "hero-eat",
+       "items": [
+        {
+         "title": "Afternoon tea",
+         "qr": {
+          "label": "Tea in your suite",
+          "url": "https://example.com/tea/penthouse"
+         }
+        },
+        {
+         "title": "Tasting menu",
+         "qr": {
+          "label": "Book the tasting",
+          "url": "https://example.com/tasting/"
+         }
+        },
+        {
+         "title": "Spa day"
+        }
+       ]
+      },
+      {
+       "id": "roomservice",
+       "type": "info",
+       "title": "Room Service",
+       "image": "hero-eat",
+       "body": "Order to your room.",
+       "qr": {
+        "label": "Order",
+        "url": "https://example.com/order/"
+       }
+      },
+      {
+       "id": "explore",
+       "type": "list",
+       "title": "Explore",
+       "image": "hero-eat",
+       "items": [
+        {
+         "title": "Cathedral",
+         "qr": {
+          "label": "Tickets",
+          "url": "https://example.com/cathedral/"
+         }
+        },
+        {
+         "title": "Harbour",
+         "qr": {
+          "label": "Boat trips",
+          "url": "https://example.com/harbour/"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   }
+  }
+ ]
+}

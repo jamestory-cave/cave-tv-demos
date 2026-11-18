@@ -52,16 +52,18 @@ async function uploadFiles(app, files, after, { slide = false } = {}) {
   return added + films.length;
 }
 
+/** onDone(recs): the photos of that drop (new or already in the library), in the order dropped. */
 function dropZone(app, onDone, { slide = false, accept = 'image/jpeg,image/png' } = {}) {
   const input = el('input', { type: 'file', accept, multiple: true, class: 'sr-only', id: uid('up') });
-  input.addEventListener('change', async () => { const files = [...input.files]; input.value = ''; await uploadFiles(app, files, null, { slide }); onDone(); });
+  const run = async (files) => { const recs = []; await uploadFiles(app, files, (r) => { if (r) recs.push(r); }, { slide }); onDone(recs); };
+  input.addEventListener('change', async () => { const files = [...input.files]; input.value = ''; await run(files); });
   const withFilms = /video/.test(accept);
   const zone = el('div.drop',
     el('div', el('strong', slide ? 'Drop artwork here ' : withFilms ? 'Drop photos or films here ' : 'Drop photos here '), el('span.muted', 'or '), el('label.btn.sm', { for: input.id }, 'Choose files'), input),
     el('span.muted.small', slide ? 'JPG or PNG · exactly 16:9 · 3840 × 2160 best, 1920 × 1080 minimum · up to 25 MB' : withFilms ? 'Photos: JPG or PNG, 1920 px wide or larger, up to 25 MB · Films: MP4, H.264 or HEVC, 1920 × 1080 or 3840 × 2160, up to 60 MB' : 'JPG or PNG · 1920 px wide or larger for full screen · up to 25 MB'));
   zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('over'); });
   zone.addEventListener('dragleave', () => zone.classList.remove('over'));
-  zone.addEventListener('drop', async (e) => { e.preventDefault(); zone.classList.remove('over'); await uploadFiles(app, [...e.dataTransfer.files], null, { slide }); onDone(); });
+  zone.addEventListener('drop', async (e) => { e.preventDefault(); zone.classList.remove('over'); await run([...e.dataTransfer.files]); });
   return zone;
 }
 
@@ -233,6 +235,7 @@ const USE_TEXT = {
   card: 'Cards show the photo cropped to a small 16:9 tile.',
   slide: 'Slides are shown full screen exactly as made: they must be 16:9 and at least 1920 × 1080.',
   poster: 'The poster is shown full frame before the film plays.',
+  gallery: 'Gallery frames fill the TV and are cropped to 16:9; choose "Show whole" on a frame for a plan, scorecard or poster. Choose several at once: they are added in name order.',
 };
 
 /**
@@ -242,8 +245,11 @@ const USE_TEXT = {
  * strip (default), frame, card, slide or poster; the shape warning and the
  * "whole image" choice depend on it.
  */
-export function pickPhoto(app, { onPick, use = 'strip', cardsOK = true }) {
+export function pickPhoto(app, { onPick, onPickMany = null, use = 'strip', cardsOK = true, max = Infinity }) {
+  // onPickMany: several photos at once (a gallery); onPickMany(srcs) gets them in name order.
+  const multi = typeof onPickMany === 'function';
   let selected = null;
+  const chosen = [];
   let query = '';
   const grid = el('div.grid', { style: { maxHeight: '44vh', overflow: 'auto', padding: '2px' } });
   const warn = el('div');
@@ -253,14 +259,24 @@ export function pickPhoto(app, { onPick, use = 'strip', cardsOK = true }) {
     if (query) l = l.filter((e) => (e.name || '').toLowerCase().includes(query.toLowerCase()));
     return l.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   };
+  const toggle = (hash) => { const i = chosen.indexOf(hash); if (i >= 0) chosen.splice(i, 1); else if (chosen.length < max) chosen.push(hash); };
   const render = () => {
     clear(grid);
     const l = list();
-    for (const e of l) grid.append(tile(app, e, e.hash === selected, (x) => { selected = x.hash; render(); refreshActions(); }));
+    for (const e of l) grid.append(tile(app, e, multi ? chosen.includes(e.hash) : e.hash === selected, (x) => { if (multi) toggle(x.hash); else selected = x.hash; render(); refreshActions(); }));
     if (!l.length) grid.append(el('div.empty', use === 'slide' ? 'No photos in Media are exactly 16:9 and 1920 × 1080 or larger. Drop the artwork above.' : 'No photos match.'));
   };
   const refreshActions = () => {
     clear(warn);
+    if (multi) {
+      const picked = app.media.entries().filter((x) => chosen.includes(x.hash));
+      okBtn.disabled = !picked.length;
+      okBtn.textContent = picked.length > 1 ? `Add ${picked.length} photos` : 'Add this photo';
+      const small = picked.filter((e) => photoProblem({ width: e.width, height: e.height }));
+      if (small.length) warn.append(el('div.note.warn.small', { style: { marginTop: '8px' } }, `${small.map((e) => e.name || e.hash).join(', ')}: too small for full screen (needs 1920 × 1080); the gallery would be held back unless the frame is set to "Show whole" (800 px is enough for that).`));
+      if (chosen.length >= max) warn.append(el('div.note.small', { style: { marginTop: '8px' } }, `That is as many as this gallery can take (${max} more).`));
+      return;
+    }
     const e = app.media.entries().find((x) => x.hash === selected);
     const shape = e ? shapeOf(e) : 'ok';
     const small = e && photoProblem({ width: e.width, height: e.height });
@@ -285,16 +301,26 @@ export function pickPhoto(app, { onPick, use = 'strip', cardsOK = true }) {
   const search = el('input.in', { type: 'search', placeholder: 'Search by name', 'aria-label': 'Search', style: { maxWidth: '260px' } });
   search.addEventListener('input', () => { query = search.value; render(); });
   const body = el('div', el('p.help', { style: { marginBottom: '8px' } }, USE_TEXT[use] || USE_TEXT.strip),
-    dropZone(app, () => { const fresh = app.media.entries().filter((e) => e.source === 'pending').sort((a, b) => (b.addedAt || '').localeCompare(a.addedAt || ''))[0]; if (fresh) selected = fresh.hash; render(); refreshActions(); }, { slide: use === 'slide', accept: 'image/jpeg,image/png' }),
+    dropZone(app, (recs) => {
+      if (multi) { for (const r of recs) if (r.hash && !chosen.includes(r.hash)) toggle(r.hash); }
+      else { const fresh = recs[recs.length - 1] || app.media.entries().filter((e) => e.source === 'pending').sort((a, b) => (b.addedAt || '').localeCompare(a.addedAt || ''))[0]; if (fresh) selected = fresh.hash; }
+      render(); refreshActions();
+    }, { slide: use === 'slide', accept: 'image/jpeg,image/png' }),
     search, el('div', { style: { height: '10px' } }), grid, warn);
   if (!cardsOK) body.prepend(el('p.help', 'Photos under 1920 px wide are shown but will hold the page back.'));
   const pick = (fit) => {
+    if (multi) {
+      const picked = app.media.entries().filter((x) => chosen.includes(x.hash)).sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true }));
+      if (!picked.length) return false;
+      onPickMany(picked.map((e) => e.assetName || e.path));
+      return true;
+    }
     const e = app.media.entries().find((x) => x.hash === selected);
     if (!e) return false;
     onPick(e.assetName || e.path, { fit });
     return true;
   };
-  const m = modal({ title: use === 'slide' ? 'Choose artwork for a slide' : use === 'poster' ? 'Choose a poster' : 'Choose a photo', body, wide: true,
+  const m = modal({ title: use === 'slide' ? 'Choose artwork for a slide' : use === 'poster' ? 'Choose a poster' : multi ? 'Choose photos' : 'Choose a photo', body, wide: true,
     actions: [{ label: 'Cancel' }, { label: 'Show the whole image', onClick: () => pick('whole') }, { label: 'Use this photo', primary: true, disabled: true, onClick: () => pick('fill') }] });
   const btns = m.box.querySelectorAll('.actions .btn');
   const wholeBtn = btns[1];

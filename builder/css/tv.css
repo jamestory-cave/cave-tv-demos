@@ -277,3 +277,78 @@
 .tv-qrmark { width: 20px; height: 20px; display: inline-block; background:
   linear-gradient(var(--gold), var(--gold)) 0 0 / 8px 8px no-repeat, linear-gradient(var(--gold), var(--gold)) 100% 0 / 8px 8px no-repeat,
   linear-gradient(var(--gold), var(--gold)) 0 100% / 8px 8px no-repeat, linear-gradient(var(--gold), var(--gold)) 70% 70% / 5px 5px no-repeat; }
+
+/* ---- The better gallery (phase B, GALLERY-CONTRACT.md, SPEC 5; wireframes/02-gallery-tv.html) ----
+   In the leaf: title, intro, the frame's caption and the counter bottom-left, the QR card
+   bottom-right above the thumbnails, the chapter row above the thumbnails. Every per-frame
+   element carries data-photo and shows with .on, so frames change with a crossfade. */
+/* Show whole: never cropped, on the dark ground. In the leaf the TV fits it inside the screen's safe area
+   (60 top and bottom, 80 at the sides), so it sits letterboxed rather than edge to edge (QA-2). */
+.tv-gphoto.whole { background-size: contain; background-color: var(--ground); }
+.tv-gallery .tv-gphoto.whole { padding: 60px 80px 60px var(--whole-left, 0px); background-origin: content-box; }
+.tv-gscrim { background: linear-gradient(to top, rgba(8,8,8,.96) 0%, rgba(8,8,8,.72) 32%, rgba(8,8,8,0) 70%); }
+.tv-gcap { gap: 26px; }
+.tv-grow { display: flex; align-items: flex-end; gap: 48px; padding: 0 72px; }
+.tv-grow .tv-cap-in { flex: 1; min-width: 0; padding: 0; }
+.tv-gintro { font-size: 28px; line-height: 1.35; color: rgba(255,255,255,.6); max-width: 900px; margin-top: 12px; }
+.tv-gcaps, .tv-gcounts { display: grid; }
+.tv-gcaps > *, .tv-gcounts > * { grid-area: 1 / 1; opacity: 0; transition: opacity 400ms var(--ease); }
+.tv-gcaps > .on, .tv-gcounts > .on { opacity: 1; }
+.tv-gcaps { margin-top: 18px; }
+.tv-gcaption { font-size: 30px; line-height: 1.3; color: rgba(255,255,255,.92); max-width: 1100px; min-height: 1px; }
+.tv-gcounts .tv-gcount { margin-top: 8px; }
+.tv-gcount b { color: var(--gold); font-weight: 500; }
+.tv-gqr { flex: none; width: 420px; padding: 26px 28px; box-shadow: 0 18px 40px rgba(0,0,0,.5); }
+.tv-gqr .tv-qr-img { width: 170px; height: 170px; padding: 8px; }
+.tv-gqr .tv-qr-img svg { width: 154px; height: 154px; }
+.tv-gchips { padding: 6px 72px; overflow: hidden; }
+.tv-strip-in { position: relative; display: flex; gap: 16px; transition: transform 300ms var(--ease); }
+.tv-thumbs .tv-strip-in { gap: 28px; }
+.tv-thumbs { display: block; padding: 18px 72px 24px; }
+.tv-chip { flex: none; font-size: 24px; padding: 9px 22px; border-radius: 30px; border: 2px solid rgba(255,255,255,.18); color: rgba(255,255,255,.7); white-space: nowrap; transition: transform 200ms var(--ease); }
+.tv-chip.cur { border-color: rgba(255,255,255,.55); color: #fff; }
+.tv-chip.is-focused { border: 3px solid var(--gold); background: rgba(183,153,109,.18); color: #fff; transform: scale(1.1); box-shadow: 0 0 24px rgba(183,153,109,.35); }
+.tv-thumb.whole { background-size: contain; background-color: var(--ground); }
+.tv-thumb.is-focused { box-shadow: 0 10px 30px rgba(0,0,0,.6); }
+.tv-thumb .tv-film-mark.sound { border-color: var(--gold); }
+.tv-thumb .tv-film-mark.loop { width: 36px; height: 36px; margin: -18px 0 0 -18px; border-style: dashed; }
+.tv-thumb .tv-film-mark.loop::after { left: 12px; top: 8px; border-width: 8px 0 8px 12px; }
+.tv-gplay { width: 180px; height: 180px; margin: -90px 0 0 -90px; top: 32%; }
+.tv-gplay span { border-width: 36px 0 36px 58px; margin-left: 14px; }
+.tv-gviewer .tv-gplay { top: 50%; }
+.tv-gplay.lit, .tv-gviewer .tv-gplay { border-color: var(--gold); box-shadow: 0 0 40px rgba(183,153,109,.5); }
+/* Slideshow style: no thumbnails; the frame is one stop; dots, "Turns every 8 s" and a bar. */
+.tv-gframe { position: absolute; left: 6px; top: 196px; right: 6px; bottom: 6px; border-radius: 6px; border: 4px solid transparent; z-index: 2; pointer-events: none; }
+.tv-gframe.is-focused { border-color: var(--gold); box-shadow: inset 0 0 70px rgba(183,153,109,.3), 0 0 40px rgba(183,153,109,.35); }
+.tv-gdots { display: flex; align-items: center; gap: 24px; padding: 0 72px; }
+.tv-gdots .dots { display: flex; gap: 12px; }
+.tv-gdots .dots i { width: 12px; height: 12px; border-radius: 50%; background: rgba(255,255,255,.3); }
+.tv-gdots .dots i.on { background: #fff; }
+.tv-gnext { font-size: 22px; color: rgba(255,255,255,.6); }
+.tv-gbar { margin: 0 72px; height: 4px; background: rgba(255,255,255,.2); border-radius: 2px; overflow: hidden; }
+.tv-gbar i { display: block; height: 100%; width: 0; background: var(--gold); }
+.tv-gallery.running .tv-gbar i { animation: tv-gbar linear 1 forwards; }
+@keyframes tv-gbar { from { width: 0; } to { width: 100%; } }
+.tv-gallery.slideshow .tv-grow { padding-bottom: 10px; }
+
+/* The full-screen viewer: the whole TV, as a finished page; caption bottom-left, Down opens a strip. */
+.tv-gviewer { position: absolute; inset: 0; overflow: hidden; background: #000; }
+.tv-vgrad { position: absolute; left: 0; right: 0; bottom: 0; height: 520px; background: linear-gradient(to top, rgba(8,8,8,.96) 0%, rgba(8,8,8,.72) 45%, rgba(8,8,8,0) 100%); transition: opacity 400ms var(--ease); }
+.tv-vcap { position: absolute; left: 90px; bottom: 90px; max-width: 1300px; display: grid; transition: opacity 400ms var(--ease); }
+.tv-vcap-one { grid-area: 1 / 1; opacity: 0; transition: opacity 400ms var(--ease); align-self: end; }
+.tv-vcap-one.on { opacity: 1; }
+.tv-vcap .tv-kicker { margin-bottom: 14px; font-size: 22px; }
+.tv-vcaption { font-size: 36px; line-height: 1.3; color: rgba(255,255,255,.92); }
+.tv-vcap .tv-gcount { margin-top: 12px; }
+.tv-gviewer.nocap .tv-vcap, .tv-gviewer.strip .tv-vcap { opacity: 0; }
+.tv-vstrip { position: absolute; left: 0; right: 0; bottom: 0; height: 330px; padding: 120px 90px 0; background: linear-gradient(to top, rgba(8,8,8,.95), rgba(8,8,8,.75) 70%, rgba(8,8,8,0)); opacity: 0; transform: translateY(40px); transition: opacity 300ms var(--ease), transform 300ms var(--ease); }
+.tv-gviewer.strip .tv-vstrip { opacity: 1; transform: none; }
+.tv-vstrip .tv-strip-in { gap: 28px; align-items: flex-end; }
+.tv-vstrip .tv-thumb { overflow: visible; }
+.tv-grp { position: absolute; top: -38px; left: 2px; font-size: 18px; letter-spacing: 3px; color: var(--gold); white-space: nowrap; }
+.tv-vmark { position: absolute; right: 90px; top: 64px; z-index: 5; font-size: 22px; letter-spacing: 4px; text-transform: uppercase; color: #fff; background: rgba(0,0,0,.5); padding: 8px 18px; border-radius: 30px; border: 1px solid rgba(255,255,255,.3); }
+/* After 4 s with no press the caption, counter and path line fade; any press brings them back. */
+.tv-stage.viewer .tv-path, .tv-stage.viewer .tv-slot, .tv-stage.viewer .tv-scrim-top { transition: opacity 400ms var(--ease); }
+.tv-stage.viewer.viewer-faded .tv-path, .tv-stage.viewer.viewer-faded .tv-slot, .tv-stage.viewer.viewer-faded .tv-scrim-top,
+.tv-stage.viewer.viewer-faded .tv-vcap, .tv-stage.viewer.viewer-faded .tv-vgrad { opacity: 0; }
+.tv-stage.viewer .tv-scrim-top { height: 240px; background: linear-gradient(to bottom, rgba(8,8,8,.82), rgba(8,8,8,.42) 50%, rgba(8,8,8,0)); }

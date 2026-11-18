@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Cave Builder self-test (hotel server)</title>
+<link rel="stylesheet" href="css/builder.css">
+<style>
+  main { max-width: 960px; margin: 0 auto; padding: 24px; }
+  .t { display: flex; gap: 10px; padding: 8px 10px; border-bottom: 1px solid var(--line-2); align-items: flex-start; }
+  .t .ok { color: var(--green); font-weight: 700; width: 46px; flex: none; }
+  .t .fail { color: var(--red); font-weight: 700; width: 46px; flex: none; }
+  #summary { font-size: 18px; font-weight: 700; margin: 12px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Cave Builder self-test: hotel server</h1>
+  <p class="muted">Checks the Builder against the Cave server it is served from, without changing anything: the published content round-trips through the editor model, the files the TVs read have the right caching and byte ranges, a stale draft save is refused, writes without the Builder's header or without signing in are refused, and an out-of-date publish is refused. Open it from the server, signed in (open the Builder first). On GitHub Pages use <a href="selftest.html">selftest.html</a>.</p>
+  <div id="summary">Running…</div>
+  <div id="results"></div>
+</main>
+<script>
+window.addEventListener('error', (e) => { const d = document.createElement('div'); d.className = 't'; d.textContent = 'ERROR ' + e.message + ' ' + (e.filename || '').split('/').pop() + ':' + e.lineno; document.getElementById('results').append(d); document.getElementById('summary').textContent = 'Error'; });
+</script>
+<script type="module">
+import { config } from './config.js';
+import { canonical } from './js/util.js';
+import { model } from './js/model.js';
+import { buildBundle, mediaPathsIn } from './js/bundle.js';
+import { validateAll } from './js/validate.js';
+import { ServerStore, DraftConflict, ServerUnreachable } from './js/stores/server.js';
+import { PublishConflict } from './js/stores/github.js';
+import { threeWayMerge } from './js/merge.js';
+
+const results = document.getElementById('results');
+let pass = 0, fail = 0;
+function check(name, ok, detail) {
+  const row = document.createElement('div');
+  row.className = 't';
+  const mark = document.createElement('span');
+  mark.className = ok ? 'ok' : 'fail';
+  mark.textContent = ok ? 'PASS' : 'FAIL';
+  const text = document.createElement('span');
+  text.textContent = name + (detail ? ` — ${detail}` : '');
+  row.append(mark, text);
+  results.append(row);
+  if (ok) pass++; else fail++;
+}
+
+async function run() {
+  check('Served by the Cave server (server mode)', config.mode === 'server', `mode ${config.mode}`);
+  if (config.mode !== 'server') return;
+  const s = new ServerStore();
+  const info = await (await fetch('/api/info')).json();
+  check('/api/info answers', info.app === 'cave-server', `version ${info.version}, publish ${info.revision}`);
+  const me = await s.me();
+  check('Signed in', !!me, me ? `${me.name} (${me.role})` : 'open the Builder and sign in first');
+  if (!me) return;
+
+  // 1. Round trip of what is published.
+  const published = await s.loadPublished();
+  check('Loaded published content from /tv/s1/', !!published.bundle, `publish ${published.version.revision}, ${published.version.bundle}`);
+  model.load(published, null);
+  const held = validateAll(model.draft, { imageSize: () => null });
+  const { bundle } = buildBundle(model.draft, { revision: published.bundle.version, held });
+  check('Model → bundle equals the published bundle (ignoring key order)', canonical(bundle) === canonical(published.bundle));
+  check('The bundle carries its revision', published.bundle.version === published.version.revision, `version ${published.bundle.version}`);
+  const missing = [];
+  for (const p of mediaPathsIn(published.bundle)) { const r = await fetch(new URL(p, config.baseURL), { method: 'HEAD' }); if (!r.ok) missing.push(p); }
+  check('Every photo and film the bundle uses is on the server', !missing.length, missing.join(', ') || `${mediaPathsIn(published.bundle).length} checked`);
+
+  // 2. Caching and ranges, as the TVs need them.
+  const v = await fetch(new URL('version.json', config.baseURL), { cache: 'no-store' });
+  check('version.json is served no-cache', /no-cache/.test(v.headers.get('Cache-Control') || ''), v.headers.get('Cache-Control'));
+  const b = await fetch(new URL(published.version.bundle, config.baseURL));
+  check('Bundles are served immutable', /immutable/.test(b.headers.get('Cache-Control') || ''), b.headers.get('Cache-Control'));
+  const film = Object.keys(published.mediaIndex.films || {})[0];
+  const somePhoto = Object.keys(published.mediaIndex.media || {})[0];
+  const mediaFile = film ? `media/${film}-${published.mediaIndex.films[film].height || 1080}.mp4` : somePhoto ? `media/${somePhoto}-800.jpg` : null;
+  if (mediaFile) {
+    const r = await fetch(new URL(mediaFile, config.baseURL), { headers: { Range: 'bytes=0-15' } });
+    const bytes = new Uint8Array(await r.arrayBuffer());
+    check('Byte ranges work (206, 16 bytes)', r.status === 206 && bytes.length === 16 && /^bytes 0-15\//.test(r.headers.get('Content-Range') || ''), `${mediaFile}: ${r.status} ${r.headers.get('Content-Range')}`);
+  }
+  // Room-specific content (18 Nov 2026): the Builder always reads the master; what differs by room is listed apart.
+  const vb = await (await fetch(new URL('version.json', config.baseURL), { cache: 'no-store', headers: { 'X-Cave-Request': '1' } })).json();
+  check('The Builder reads the master\'s version.json whichever room this computer is in', vb.bundle === published.version.bundle && vb.revision === published.version.revision, vb.bundle);
+  const ov = await s.api('GET', 'overrides/published');
+  const pageIds = new Set(); (function walk(p) { pageIds.add(p.id); (p.children || []).forEach(walk); })(published.bundle.home);
+  check('/api/overrides/published answers for the live publish; its entries only name pages on TVs, with values per room type or room',
+    ov.revision === published.version.revision && (ov.overrides === null || (Array.isArray(ov.overrides.entries) && ov.overrides.entries.every((e) => pageIds.has(e.page) && ['type', 'room'].includes(e.by) && Array.isArray(e.path) && e.values && typeof e.values === 'object'))),
+    ov.overrides ? `${ov.overrides.entries.length} entries` : 'none published');
+  const who = await fetch('/tv/whoami');
+  check('/tv/whoami answers (room, or 404 for an unknown address)', who.status === 200 || who.status === 404, `${who.status} ${JSON.stringify(await who.json())}`);
+
+  // 3. Refusals (nothing is written).
+  const before = await s.api('GET', 'draft');
+  let refused = null;
+  try { await s.api('PUT', 'draft', { rev: before.rev + 1000, doc: before.doc || published.bundle, basedOn: before.basedOn }, { retry: false }); } catch (e) { refused = e; }
+  check('A draft save from an old revision is refused (409) with the current draft', refused?.status === 409 && refused.data?.draft?.rev === before.rev, refused ? `${refused.status}` : 'it was accepted');
+  const after = await s.api('GET', 'draft');
+  check('…and the draft is unchanged', after.rev === before.rev);
+  const s2 = new ServerStore();
+  s2.draftRev = before.rev + 1000;
+  let conflict = null;
+  try { await s2.saveDraft({ doc: before.doc || published.bundle, basedOn: before.basedOn }); } catch (e) { conflict = e; }
+  check('ServerStore turns that into a DraftConflict', conflict instanceof DraftConflict && conflict.current.rev === before.rev);
+  const noHeader = await fetch('/api/draft', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  check('A write without the Builder\'s header is refused (403)', noHeader.status === 403);
+  let stale = null;
+  try { await s.publish({ bundle: published.bundle, basedOnRevision: published.version.revision - 1, summary: ['self-test: must be refused'] }); } catch (e) { stale = e; }
+  check('A publish based on an older revision is refused (PublishConflict)', stale instanceof PublishConflict, stale?.message);
+  const v2 = await s.fetchJSON('version.json', { fresh: true });
+  check('…and nothing was published', v2.revision === published.version.revision);
+
+  // 4. Merging two people's drafts (pure, no server).
+  const base = JSON.parse(JSON.stringify(published.bundle));
+  const theirs = JSON.parse(JSON.stringify(base)); theirs.hotel.checkout = 'Noon';
+  const mine = JSON.parse(JSON.stringify(base)); mine.hotel.reception = 'Dial 9';
+  const merged = threeWayMerge(base, theirs, mine);
+  check('Two people changing different fields: both kept', merged.doc.hotel.checkout === 'Noon' && merged.doc.hotel.reception === 'Dial 9' && !merged.conflicts.length);
+
+  // 5. QA-1: the merge base is a copy, never the draft the editor changes.
+  const s3 = new ServerStore();
+  const live = JSON.parse(JSON.stringify(published.bundle));
+  s3.acceptRemote({ rev: 7, doc: live });
+  live.hotel.checkout = 'changed in the editor';
+  check('acceptRemote keeps its own copy of the merge base (QA-1)', s3.draftBase !== live && s3.draftBase.hotel.checkout !== 'changed in the editor' && s3.draftRev === 7);
+  const s4 = new ServerStore({ fetchImpl: async () => new Response(JSON.stringify({ rev: 3, doc: published.bundle, basedOn: null }), { status: 200 }) });
+  const loaded = await s4.loadDraft();
+  loaded.doc.hotel.checkout = 'typed';
+  check('loadDraft hands the editor a document that is not the merge base (QA-1)', s4.draftBase.hotel.checkout !== 'typed');
+
+  // 6. QA-11: a publish whose reply is lost.
+  const ok = (body) => new Response(JSON.stringify(body), { status: 200 });
+  const lostReply = (asWho, rev) => async (url, init) => {
+    const u = String(url);
+    if (init?.method === 'POST') throw new TypeError('Failed to fetch');
+    if (u.includes('version.json')) return ok({ schema: 1, revision: rev, bundle: 'bundles/x.json', publishedAt: '2026-10-09T12:00:00Z', note: '' });
+    if (u.includes('history.json')) return ok([{ revision: rev, bundle: 'bundles/x.json', publishedAt: '2026-10-09T12:00:00Z', by: asWho, summary: [] }]);
+    if (u.includes('index.json')) return ok({ assets: {}, media: {}, films: {} });
+    return ok({ home: { id: 'home', type: 'home' } });
+  };
+  const s5 = new ServerStore({ fetchImpl: lostReply('Self-test', 6) }); s5.user = { name: 'Self-test' };
+  const got = await s5.publish({ bundle: published.bundle, basedOnRevision: 5, summary: [] });
+  check('Reply lost but the publish went through: reported as published, not failed (QA-11)', got.recovered === true && got.revision === 6);
+  const s6 = new ServerStore({ fetchImpl: lostReply('Someone else', 5) }); s6.user = { name: 'Self-test' };
+  let err = null;
+  try { await s6.publish({ bundle: published.bundle, basedOnRevision: 5, summary: [] }); } catch (e) { err = e; }
+  check('Server unreachable: a plain message, no "Failed to fetch" (QA-11)', err instanceof ServerUnreachable && /could not be reached, so nothing was published/.test(err.message) && !/fetch/i.test(err.message), err?.message);
+}
+
+run().catch((e) => check('Unexpected error', false, e.message)).finally(() => {
+  document.getElementById('summary').textContent = fail ? `${fail} failed, ${pass} passed` : `All ${pass} checks passed`;
+  window.selftestDone = { pass, fail };
+  document.getElementById('summary').style.color = fail ? 'var(--red)' : 'var(--green)';
+});
+</script>
+</body>
+</html>

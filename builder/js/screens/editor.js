@@ -1,10 +1,10 @@
 // Page editor: parts on the left, live TV preview in the middle, the selected
 // part's fields on the right. Every keystroke updates the preview.
 
-import { el, clear, svgIcon, plural } from '../util.js';
-import { model, addPage, newPage, movePage, moveInList, PAGE_TYPES } from '../model.js';
-import { LIMITS, validQR, galleryFrames } from '../validate.js';
-import { toast, textField, uid, sortable, moveButtons, iconButton, confirmModal, modal } from '../ui.js';
+import { el, clear, svgIcon, plural, clone } from '../util.js';
+import { model, addPage, newPage, movePage, moveInList, PAGE_TYPES, pageChoices } from '../model.js';
+import { LIMITS, validQR, galleryFrames, validatePage, linkProblem } from '../validate.js';
+import { toast, textField, uid, sortable, moveButtons, iconButton, confirmModal, modal, promptModal } from '../ui.js';
 import { TVPreview } from '../preview/stage.js';
 import { pickPhoto } from './media.js';
 import { pickFilm, posterCapture, filmInfoBox } from './films.js';
@@ -12,30 +12,28 @@ import { prepareSlide } from '../media.js';
 import { remotePad } from './remote.js';
 import { moveModal } from './move.js';
 import { frameStill } from '../bundle.js';
+import { tagControl, previewAsControl, whoFor } from './overrides.js';
+import { getPage, versionPatch, setVersionPatch, effectivePage, diffPatch, effectiveDoc, keyLabel, cardField } from '../overrides.js';
+import { framesOf, setFrames, setOptions, galleryOptions, orderByChapter, chapterRuns, chapterNames, matchChapter, chapterKey, cleanChapter, hasChapters, frameCount, parseCaptions, SECONDS_CHOICES, STYLES, GALLERY_PRESETS } from '../gallery.js';
 
 /** Remembered per browser: the TV preview takes most of the window. */
 const BIG_KEY = 'cave.builder.largePreview';
 const readBig = () => { try { return localStorage.getItem(BIG_KEY) === '1'; } catch { return false; } };
 const writeBig = (on) => { try { if (on) localStorage.setItem(BIG_KEY, '1'); else localStorage.removeItem(BIG_KEY); } catch { /* private mode: not remembered */ } };
 
-/**
- * Writes a gallery's frames back. Frames with any film are kept as `slides`
- * with `images` carrying every frame's still (so an older TV app still shows
- * photos); frames that are all photos are plain `images`, as before.
- */
-function setFrames(pg, frames) {
-  if (frames.some((fr) => fr.film)) {
-    pg.slides = frames.map((fr) => (fr.film ? { film: fr.film, ...(fr.poster ? { poster: fr.poster } : {}) } : { image: fr.image }));
-    pg.images = frames.map(frameStill).filter(Boolean);
-  } else {
-    delete pg.slides;
-    pg.images = frames.map((fr) => fr.image).filter(Boolean);
-  }
-}
-const framesCopy = (pg) => galleryFrames(pg).map((fr) => ({ ...fr }));
+// Gallery frames are written back with gallery.js setFrames: `slides` when any
+// frame needs more than a photo (film, caption, chapter, show whole, sound),
+// with `images` carrying every frame's still so an older TV app still shows
+// photos; frames that are plain photos are plain `images`, as before.
+const framesCopy = (pg) => framesOf(pg).map((fr) => ({ ...fr }));
 
 /** Sets a text field, dropping it when empty so the bundle stays clean. */
 const put = (obj, key, v) => { if (v === '' || v == null) delete obj[key]; else obj[key] = v; };
+
+/** How a page field is named in a version's "changed" notes. */
+const VERSION_FIELD_LABELS = { title: 'The title', kicker: 'The small caps line', subtitle: 'The subtitle', image: 'The photo', body: 'The text', facts: 'The facts', hoursTitle: 'The hours heading',
+  hours: 'The hours', qr: 'The QR link', sections: 'The menu', images: 'The photos', items: 'The cards', description: 'The description', photos: 'The photo frames', films: 'The films', backgroundFilm: 'The background film', slides: 'The slides',
+  gallery: 'The gallery settings' };
 
 const PART_DEFS = {
   heading:  { label: 'Heading', hint: 'Small caps line, title, subtitle' },
@@ -46,7 +44,8 @@ const PART_DEFS = {
   qr:       { label: 'QR link', hint: 'A web address and one line' },
   children: { label: 'Pages under it', hint: 'Tiles that open further pages' },
   menu:     { label: 'Menu', hint: 'Parts, dishes, prices' },
-  images:   { label: 'Photos and films', hint: 'Each a photo or a silent film' },
+  images:   { label: 'Photos and films', hint: 'Captions, chapters, fit, films' },
+  gallery:  { label: 'This gallery', hint: 'Style, plays by itself, intro' },
   items:    { label: 'Cards', hint: 'Title, line, text, photo' },
   hotel:    { label: 'Contact card', hint: 'From Hotel details' },
   photos:   { label: 'Photo frames', hint: 'Up to six photos in the page, fill or whole' },
@@ -61,7 +60,7 @@ function partsFor(page) {
     case 'hub': return ['heading', 'photo', 'text', 'photos', 'films', 'children', 'bg'];
     case 'info': return ['heading', 'photo', 'text', 'facts', 'photos', 'films', 'children', 'hours', 'qr', 'bg'];
     case 'menu': return ['heading', 'photo', 'text', 'menu', 'films', 'hours', 'qr', 'children', 'bg'];
-    case 'gallery': return ['heading', 'photo', 'images', 'children'];
+    case 'gallery': return ['heading', 'photo', 'gallery', 'images', 'qr', 'children'];
     case 'list': return ['heading', 'photo', 'text', 'photos', 'films', 'items', 'qr', 'children', 'bg'];
     case 'contact': return ['heading', 'photo', 'hotel', 'facts', 'text', 'photos', 'films', 'qr', 'children', 'bg'];
     case 'finished': return ['heading', 'photo', 'slides', 'qr'];
@@ -69,10 +68,12 @@ function partsFor(page) {
   }
 }
 
-function partForField(field) {
+function partForField(field, type) {
   const head = field.split('.')[0];
+  if (type === 'gallery' && (head === 'body' || head === 'gallery')) return 'gallery';
+  if (type === 'gallery' && head === 'slides') return 'images';
   return { title: 'heading', kicker: 'heading', subtitle: 'heading', description: 'heading', image: 'photo', body: 'text', facts: 'facts', hours: 'hours', hoursTitle: 'hours', qr: 'qr', children: 'children', childrenTitle: 'children', sections: 'menu', images: 'images', items: 'items',
-    photos: 'photos', films: 'films', backgroundFilm: 'bg', slides: 'slides' }[head] || 'heading';
+    photos: 'photos', films: 'films', backgroundFilm: 'bg', slides: 'slides', gallery: 'gallery' }[head] || 'heading';
 }
 
 function partSummary(page, part, app) {
@@ -85,7 +86,13 @@ function partSummary(page, part, app) {
     case 'qr': return page.qr ? page.qr.label || page.qr.url : 'Not used';
     case 'children': return (page.children || []).length ? page.children.map((c) => c.title).join(' · ') : 'None yet';
     case 'menu': { const n = (page.sections || []).reduce((a, s) => a + (s.items || []).length, 0); return `${plural((page.sections || []).length, 'part')} · ${plural(n, 'dish', 'dishes')}`; }
-    case 'images': { const fr = galleryFrames(page); const n = fr.filter((x) => x.film).length; return fr.length ? `${plural(fr.length - n, 'photo')}${n ? `, ${plural(n, 'film')}` : ''}` : 'None yet'; }
+    case 'images': {
+      const fr = galleryFrames(page); const n = fr.filter((x) => x.film).length;
+      if (!fr.length) return 'None yet';
+      const ch = chapterNames(fr).length;
+      return `${plural(fr.length - n, 'photo')}${n ? `, ${plural(n, 'film')}` : ''}${ch ? ` in ${plural(ch, 'chapter')}` : ''}`;
+    }
+    case 'gallery': { const o = galleryOptions(page); return `${STYLES[o.style]}${o.style === 'slideshow' ? `, ${o.seconds} s` : o.autoplay ? `, plays by itself, ${o.seconds} s` : ''}${page.body ? ' · intro' : ''}`; }
     case 'items': return (page.items || []).length ? plural(page.items.length, 'card') : 'None yet';
     case 'hotel': return 'Reception, room service, Wi-Fi, check-out';
     case 'photos': return (page.photos || []).length ? plural(page.photos.length, 'frame') : 'Not used';
@@ -101,12 +108,53 @@ export function mount(host, app, params) {
   const found = model.find(pageId);
   if (!found) { host.append(el('div.empty', 'That page no longer exists. ', el('button.btn.link', { type: 'button', onclick: () => app.go('home') }, 'Back to Home'))); return {}; }
 
+  // Hotel server: tags for room-specific content, and editing one version of a
+  // page (stage B): `params.version` is the room type id or room number.
+  const SERVER = !!app.server;
+  const versionKey = SERVER && params.version !== undefined && params.version !== null ? String(params.version) : null;
+  if (versionKey !== null && !getPage(model.draft, pageId)) {
+    host.append(el('div.empty', 'This page is the same on every TV now, so it has no versions to edit. ',
+      el('button.btn.link', { type: 'button', onclick: () => app.go('editor', { page: pageId }) }, 'Open the page'), ' · ',
+      el('button.btn.link', { type: 'button', onclick: () => app.go('overrides') }, 'Overrides')));
+    return {};
+  }
+  const vrec = () => getPage(model.draft, pageId);
+  const versionName = () => keyLabel(vrec()?.by, versionKey, app.names()).replace(/^room /, 'Room ');
+  /** Who the version is for, for the preview: a type, or a room with its type. */
+  const versionWho = () => {
+    if (versionKey === null) return null;
+    if (vrec()?.by === 'type') return { typeId: versionKey };
+    return whoFor(app, `room:${versionKey}`);
+  };
+  const patchNow = () => (versionKey === null ? {} : versionPatch(model.draft, pageId, versionKey));
+
   const compact = () => window.innerWidth <= 1200;
-  const state = { part: 'heading', field: null, mode: 'edit', safe: false, view: 'draft', focusField: null, showRemote: compact() || matchMedia('(pointer: coarse)').matches, big: readBig() };
+  const state = { part: 'heading', field: null, frame: 0, mode: 'edit', safe: false, view: 'draft', focusField: null, showRemote: compact() || matchMedia('(pointer: coarse)').matches, big: readBig() };
   let preview = null;
-  const page = () => model.find(pageId)?.page;
+  /** The page being edited: the master, or in a version the master with that version's changed fields over it. */
+  const page = () => {
+    const m = model.find(pageId)?.page;
+    if (!m || versionKey === null) return m;
+    const eff = effectivePage({ ...m, children: [] }, patchNow());
+    eff.children = m.children;
+    return eff;
+  };
+  /**
+   * Runs an edit on the page. In a version the edit lands on a copy of the
+   * effective page, and only the fields that now differ from the master are
+   * kept in the version (a field set back to the master's value follows the
+   * master again).
+   */
+  const lens = (fn) => (d) => {
+    const m = model.find(pageId, d).page;
+    if (versionKey === null) return fn(m, d);
+    const eff = effectivePage({ ...m, children: [] }, versionPatch(d, pageId, versionKey));
+    const r = fn(eff, d);
+    setVersionPatch(d, pageId, versionKey, diffPatch(m, eff));
+    return r;
+  };
   const commit = (label, fn, key) => {
-    model.commit(label, (d) => fn(model.find(pageId, d).page, d), { origin: 'editor', coalesce: key, pageId });
+    model.commit(label, lens(fn), { origin: 'editor', coalesce: key, pageId });
     // Typing while "On TVs now" is showing: flip back to the draft so the change is seen.
     if (state.view === 'published') { state.view = 'draft'; renderCentre(); }
   };
@@ -116,7 +164,20 @@ export function mount(host, app, params) {
   const centre = el('div.centre');
   const side = el('div.side');
   const editorEl = el('div.editor' + (state.big ? '.big' : ''), rail, centre, side);
-  host.append(sub, editorEl);
+  const banner = versionKey !== null ? el('div.version-banner', { role: 'note' }) : null;
+  host.append(sub, ...(banner ? [banner] : []), editorEl);
+
+  function renderBanner() {
+    if (!banner) return;
+    clear(banner);
+    const n = Object.keys(patchNow()).length;
+    banner.append(el('span', el('strong', `Editing ${model.find(pageId).page.title || 'this page'}: ${versionName()} version. `),
+      n ? `${plural(n, 'field')} here ${n === 1 ? 'differs' : 'differ'} from the master (marked Changed); everything else follows the master. ` : 'Nothing is changed yet: this version is the master. ',
+      'Pages inside it follow the master.'),
+      el('span.spacer'),
+      el('button.btn.sm', { type: 'button', onclick: () => app.go('overrides', { page: pageId, field: 'page' }) }, 'All versions'),
+      el('button.btn.sm', { type: 'button', onclick: () => app.go('editor', { page: pageId }) }, 'Edit the master'));
+  }
 
   function setBig(on) {
     state.big = on;
@@ -146,16 +207,27 @@ export function mount(host, app, params) {
   function renderRail() {
     clear(rail);
     const p = page();
-    const v = app.validation().get(pageId) || { blockers: [], warnings: [] };
-    rail.append(el('h3', 'Parts of this page'));
-    for (const part of partsFor(p)) {
-      const flags = [...v.blockers.map((b) => ({ ...b, k: 'block' })), ...v.warnings.map((w) => ({ ...w, k: 'warn' }))].filter((x) => partForField(x.field) === part);
-      const b = el('button.part' + (part === state.part ? '.sel' : ''), { type: 'button', onclick: () => selectPart(part) },
-        el('div.w', el('div.n', PART_DEFS[part].label), el('div.s', partSummary(p, part, app))));
+    const v = pageChecks();
+    rail.append(el('h3', versionKey !== null ? `Parts of the ${versionName()} version` : 'Parts of this page'));
+    const changedParts = new Set(Object.keys(patchNow()).map((k) => partForField(k, p.type)));
+    for (const part of parts(p)) {
+      const flags = [...v.blockers.map((b) => ({ ...b, k: 'block' })), ...v.warnings.map((w) => ({ ...w, k: 'warn' }))].filter((x) => partForField(x.field, p.type) === part);
+      const b = el('button.part' + (part === state.part ? '.sel' : '') + (changedParts.has(part) ? '.changed' : ''), { type: 'button', onclick: () => selectPart(part) },
+        el('div.w', el('div.n', PART_DEFS[part].label, changedParts.has(part) ? el('span.pill.amber', { style: { marginLeft: '6px' } }, 'Changed') : null), el('div.s', partSummary(p, part, app))));
       if (flags.length) b.append(el('span.flag.' + (flags.some((f) => f.k === 'block') ? 'block' : 'warn'), { title: flags.map((f) => f.message).join('\n') }));
       rail.append(b);
     }
     rail.append(el('p.muted.tiny', { style: { marginTop: '14px' } }, 'Staff choose the words and photos. The TV decides fonts, colours and where each part sits.'));
+  }
+
+  /** Parts shown: in a version, not the pages inside (they follow the master). */
+  const parts = (p) => partsFor(p).filter((x) => versionKey === null || x !== 'children');
+
+  /** Checks for the page as edited (a version is checked as the TV would show it). */
+  function pageChecks() {
+    if (versionKey === null) return app.validation().get(pageId) || { blockers: [], warnings: [] };
+    const depth = model.find(pageId)?.depth ?? 0;
+    return validatePage(page(), { ...app.validationCtx(), isStrip: depth === 1 || depth === 2 });
   }
 
   // ---- centre ----
@@ -171,7 +243,15 @@ export function mount(host, app, params) {
       viewSeg.append(el('button', { type: 'button', class: state.view === v ? 'on' : '', 'aria-pressed': String(state.view === v), onclick: () => { state.view = v; renderCentre(); } }, label));
     }
     const remoteToggle = el('label.check', el('input', { type: 'checkbox', checked: state.showRemote, onchange: (e) => { state.showRemote = e.target.checked; wrap.classList.toggle('show-remote', state.showRemote); } }), 'On-screen remote');
-    centre.append(el('div.row.between', { style: { marginBottom: '10px' } }, el('div.row', modeSeg, safe, state.mode === 'remote' ? remoteToggle : null), viewSeg));
+    centre.append(el('div.row.between.wrap', { style: { marginBottom: '10px', gap: '8px' } }, el('div.row', modeSeg, safe, state.mode === 'remote' ? remoteToggle : null), viewSeg));
+    // Hotel server: see what one room type or room will get (room number, else room type, else master).
+    if (SERVER && versionKey === null && state.view === 'draft') {
+      const asNote = el('span.small.muted');
+      const sayAs = () => { asNote.textContent = app.previewAs ? 'Showing what that TV will get. Edits here change the master.' : ''; };
+      centre.append(el('div.row.wrap', { style: { marginBottom: '8px', gap: '10px' } }, previewAsControl(app, app.previewAs || '', (v) => { app.previewAs = v; sayAs(); refreshPreview(false); }), asNote));
+      centre.append(el('div.small.held-note', { style: { color: 'var(--amber)', marginBottom: '6px' }, role: 'status' }));
+      sayAs();
+    }
     const tvHost = el('div.tv-host');
     const wrap = el('div.remote-wrap' + (state.showRemote && state.mode === 'remote' ? '.show-remote' : ''), tvHost);
     centre.append(wrap);
@@ -182,11 +262,12 @@ export function mount(host, app, params) {
         if (pid === 'hotel') { toast('Reception, room service, Wi-Fi and check-out are set in Hotel details.', { action: 'Open', onAction: () => app.go('hotel') }); return; }
         if (pid !== pageId) { app.go('editor', { page: pid }); return; }
         state.focusField = field;
-        selectPart(partForField(field), field);
+        selectPart(partForField(field, page().type), field);
       },
       onNavigate: (pid) => { if (pid !== pageId && state.mode === 'edit' && model.find(pid)) app.go('editor', { page: pid }); },
     });
     preview.setSafeArea(state.safe);
+    if (window.cave) window.cave.preview = preview;   // for the developer harness and QA scripts
     refreshPreview(true);
     preview.setMode(state.mode);
     wrap.append(remotePad((k) => preview.key(k), { wide: compact() }));
@@ -195,14 +276,28 @@ export function mount(host, app, params) {
     const showScale = () => { scaleCap.textContent = `1920 × 1080, shown at ${Math.round((preview.viewport.clientWidth || 800) / 1920 * 100)}%`; };
     preview.onFit = showScale;
     showScale();
-    centre.append(el('div.tvcap', el('span.muted.small', state.mode === 'edit' ? 'Click anything on the TV to edit it. Click a strip to open it.' : 'Arrow keys move, Enter selects, Esc is Menu. Click the TV first if the keys do nothing.'), scaleCap));
+    centre.append(el('div.tvcap', el('span.muted.small', state.mode === 'edit' ? 'Click anything on the TV to edit it. Click a strip to open it.' : 'Arrow keys move, Enter selects, Esc is Menu, Space is Play/Pause. Click the TV first if the keys do nothing.'), scaleCap));
     if (state.view === 'published' && !model.find(pageId, model.published?.bundle)) {
       centre.append(el('div.note.small', { style: { marginTop: '8px' } }, 'Not on TVs yet. This page is new; it goes to the TV when you publish.'));
     }
   }
 
   function refreshPreview(navigate = false) {
-    const doc = state.view === 'published' ? model.published?.bundle : model.draft;
+    // In a version, or with "Preview as" chosen, the preview shows that TV's content.
+    const who = versionKey !== null ? versionWho() : (SERVER && app.previewAs ? whoFor(app, app.previewAs) : null);
+    // Preview as shows what that TV will get: a value held back is drawn as the TV will have it (QA-7).
+    // A version being edited is drawn as typed, so the edit is seen.
+    let doc = state.view === 'published' ? model.published?.bundle : model.draft;
+    if (state.view !== 'published' && who) {
+      if (versionKey !== null) doc = effectiveDoc(model.draft, who);
+      else {
+        const { overrides, blocked } = app.liveOverrides();
+        doc = effectiveDoc({ ...model.draft, overrides }, who);
+        const mine = blocked.filter((b) => (b.by === 'type' ? String(b.key) === String(who.typeId) : who.room && String(b.key).toLowerCase() === String(who.room).toLowerCase()));
+        const note = centre.querySelector('.held-note');
+        if (note) note.textContent = mine.length ? `${plural(mine.length, 'value')} for this TV ${mine.length === 1 ? 'is' : 'are'} held back (${mine.map((b) => `${model.pathLabel(b.pageId)}: ${b.message}`).join('; ')}). The preview shows what the TV will get until ${mine.length === 1 ? 'it is' : 'they are'} fixed.` : '';
+      }
+    }
     if (!doc) return;
     const slide = preview.slideIndex;
     preview.setDoc(doc, { reveal: [pageId] });
@@ -221,20 +316,25 @@ export function mount(host, app, params) {
   function selectPart(part, field = null) {
     state.part = part;
     state.field = field;
+    const fm = /^images\.(\d+)/.exec(field || '');
+    if (fm) state.frame = Number(fm[1]);
     renderRail();
     renderSide();
     preview.setSelectedField(field ? `${pageId}|${field}` : null);
     const slideMatch = /^slides\.(\d+)/.exec(field || '');
     if (slideMatch) preview.showSlide(Number(slideMatch[1]));
     // Scroll the TV's page area so the part being edited is in view (QA2-1).
-    const PART_ANCHOR = { heading: 'title', photo: null, text: 'body', facts: 'facts', hours: 'hours', qr: 'qr', children: 'children', menu: 'sections', images: 'images', items: 'items', hotel: 'reception', photos: 'photos', films: 'films', bg: 'backgroundFilm', slides: null };
+    const PART_ANCHOR = { gallery: null, heading: 'title', photo: null, text: 'body', facts: 'facts', hours: 'hours', qr: 'qr', children: 'children', menu: 'sections', images: 'images', items: 'items', hotel: 'reception', photos: 'photos', films: 'films', bg: 'backgroundFilm', slides: null };
     const anchor = field || PART_ANCHOR[part];
     if (anchor) preview.revealField(`${part === 'hotel' ? 'hotel' : pageId}|${anchor}`);
     if (field) {
-      const target = side.querySelector(`[data-field="${CSS.escape(field)}"]`);
+      const target = side.querySelector(`[data-field="${CSS.escape(field)}"]`) || (fm ? side.querySelector(`[data-field="images.${fm[1]}.caption"]`) : null);
       if (target) { target.focus(); target.scrollIntoView({ block: 'nearest' }); }
     }
   }
+
+  /** The tag control under a field that can differ by room (hotel server, master only). */
+  const tag = (field, label) => (SERVER && versionKey === null ? tagControl(app, pageId, field, label ? { label } : {}) : '');
 
   const tf = (o) => {
     const f = textField({ id: uid('e'), ...o });
@@ -249,10 +349,18 @@ export function mount(host, app, params) {
     if (state.big) {
       // The parts list is folded away: choose a part here, or click the TV.
       const pick = el('select.in', { 'aria-label': 'Part of this page', onchange: (e) => selectPart(e.target.value) });
-      for (const part of partsFor(p)) pick.append(el('option', { value: part, selected: part === state.part }, `${PART_DEFS[part].label} · ${partSummary(p, part, app)}`));
+      for (const part of parts(p)) pick.append(el('option', { value: part, selected: part === state.part }, `${PART_DEFS[part].label} · ${partSummary(p, part, app)}`));
       side.append(el('label.small.muted', { style: { display: 'block', marginBottom: '4px' } }, 'Part of this page'), pick, el('div', { style: { height: '12px' } }));
     }
     side.append(el('div.row.between', { style: { marginBottom: '10px' } }, el('h2', { style: { margin: 0 } }, PART_DEFS[state.part].label), el('span.muted.small', PART_DEFS[state.part].hint)));
+    // In a version: each field of this part that differs from the master, with Back to master.
+    if (versionKey !== null) {
+      const changed = Object.keys(patchNow()).filter((k) => partForField(k, p.type) === state.part);
+      for (const k of changed) {
+        side.append(el('div.note.warn.small.vchanged', { style: { marginBottom: '8px' } }, el('strong', `${VERSION_FIELD_LABELS[k] || k} is changed in this version. `),
+          el('button.btn.sm', { type: 'button', onclick: () => { model.commit(`${VERSION_FIELD_LABELS[k] || k}: back to the master`, (d) => { const pt = { ...versionPatch(d, pageId, versionKey) }; delete pt[k]; setVersionPatch(d, pageId, versionKey, pt); }, { pageId }); renderSide(); } }, 'Back to master')));
+      }
+    }
     const body = el('div');
     side.append(body);
     switch (state.part) {
@@ -265,6 +373,7 @@ export function mount(host, app, params) {
       case 'children': renderChildren(body, p); break;
       case 'menu': renderMenuPart(body, p); break;
       case 'images': renderImages(body, p); break;
+      case 'gallery': renderGallerySettings(body, p); break;
       case 'items': renderItems(body, p); break;
       case 'hotel': renderHotelPart(body); break;
       case 'photos': renderPhotos(body, p); break;
@@ -272,11 +381,27 @@ export function mount(host, app, params) {
       case 'bg': renderBackground(body, p); break;
       case 'slides': renderSlides(body, p); break;
     }
+    // Fields that differ from the master in this version are marked.
+    if (versionKey !== null) {
+      const changed = new Set(Object.keys(patchNow()));
+      body.querySelectorAll('[data-field]').forEach((n) => {
+        if (changed.has(n.dataset.field.split('.')[0])) (n.closest('.field') || n).classList.add('changed');
+      });
+    }
     side.append(el('div.rule'));
-    side.append(el('h3', 'Checks on this page'));
+    side.append(el('h3', versionKey !== null ? 'Checks on this version' : 'Checks on this page'));
     side.append(el('div#checks', checks(p)));
     side.append(el('div.rule'));
     side.append(el('h3', 'This page'));
+    if (versionKey !== null) {
+      side.append(el('p.small.muted', 'Hiding, moving and the pages inside are the same in every version: change them on the master.'));
+      side.append(el('div.row.wrap', el('button.btn.sm', { type: 'button', onclick: () => app.go('editor', { page: pageId }) }, 'Edit the master'), el('button.btn.sm', { type: 'button', onclick: () => app.go('overrides', { page: pageId, field: 'page' }) }, 'All versions')));
+      return;
+    }
+    if (SERVER && p.id !== 'home') {
+      side.append(el('div.field', el('label.small', 'This whole page'), tagControl(app, pageId, 'page', { label: 'This page' }),
+        el('div.help', 'A version per room type or room, each starting as this page. Only what you change in a version differs; the pages inside it stay the same everywhere.')));
+    }
     const ops = el('div.row.wrap');
     if (p.id !== 'home') {
       ops.append(el('button.btn.sm', { type: 'button', onclick: () => commit(p.hidden ? `Show ${p.title}` : `Hide ${p.title}`, (pg) => { if (pg.hidden) delete pg.hidden; else pg.hidden = true; }) }, p.hidden ? 'Show to guests' : 'Hide from guests'));
@@ -287,7 +412,8 @@ export function mount(host, app, params) {
   }
 
   function checks(p) {
-    const v = app.validation().get(p.id) || { blockers: [], warnings: [] };
+    const v = pageChecks();
+    void p;
     const box = el('div');
     for (const b of v.blockers) box.append(el('div.note.block.small', el('strong', 'Held back. '), b.message + '.'));
     for (const w of v.warnings) box.append(el('div.note.warn.small', el('strong', 'Warning. '), w.message + '.'));
@@ -298,14 +424,14 @@ export function mount(host, app, params) {
   // ---- part panels ----
   function renderHeading(box, p) {
     if (p.type === 'finished') {
-      box.append(tf({ label: 'Title, for its strip and the path line', field: 'title', value: p.title || '', limit: LIMITS.title, onInput: (v) => commit('Edit title', (pg) => { pg.title = v; }, 'title') }));
+      box.append(tf({ label: 'Title, for its strip and the path line', field: 'title', value: p.title || '', limit: LIMITS.title, onInput: (v) => commit('Edit title', (pg) => { pg.title = v; }, 'title') }), tag('title'));
       box.append(tf({ label: 'What does it say?', field: 'description', value: p.description || '', limit: LIMITS.description, multiline: true, rows: 3, placeholder: 'Fire plan for all three levels with the assembly point at the front of the hotel.', help: 'Not shown on the TV. The words in artwork are pixels; this plain sentence gives search and read-aloud something to use later.', onInput: (v) => commit('Edit description', (pg) => put(pg, 'description', v), 'description') }));
       box.append(el('div.note.small', { style: { marginTop: '4px' } }, 'Words and prices in this artwork can only be changed by uploading a new version. Anything that changes often belongs on a page built from parts.'));
       return;
     }
-    box.append(tf({ label: 'Small caps line', field: 'kicker', value: p.kicker || '', limit: LIMITS.kicker, help: 'Shown in gold above the title, e.g. "AA 2 Rosettes".', onInput: (v) => commit('Edit small caps line', (pg) => put(pg, 'kicker', v), 'kicker') }));
-    box.append(tf({ label: 'Title', field: 'title', value: p.title || '', limit: LIMITS.title, onInput: (v) => commit('Edit title', (pg) => { pg.title = v; }, 'title') }));
-    if (p.type !== 'gallery') box.append(tf({ label: 'Subtitle', field: 'subtitle', value: p.subtitle || '', limit: LIMITS.subtitle, help: 'One line under the title.', onInput: (v) => commit('Edit subtitle', (pg) => put(pg, 'subtitle', v), 'subtitle') }));
+    box.append(tf({ label: 'Small caps line', field: 'kicker', value: p.kicker || '', limit: LIMITS.kicker, help: 'Shown in gold above the title, e.g. "AA 2 Rosettes".', onInput: (v) => commit('Edit small caps line', (pg) => put(pg, 'kicker', v), 'kicker') }), tag('kicker'));
+    box.append(tf({ label: 'Title', field: 'title', value: p.title || '', limit: LIMITS.title, onInput: (v) => commit('Edit title', (pg) => { pg.title = v; }, 'title') }), tag('title'));
+    if (p.type !== 'gallery') box.append(tf({ label: 'Subtitle', field: 'subtitle', value: p.subtitle || '', limit: LIMITS.subtitle, help: 'One line under the title.', onInput: (v) => commit('Edit subtitle', (pg) => put(pg, 'subtitle', v), 'subtitle') }), tag('subtitle'));
   }
 
   function renderPhoto(box, p) {
@@ -321,6 +447,7 @@ export function mount(host, app, params) {
     box.append(el('p.help', p.type === 'finished'
       ? 'The strip on the way in. Slide 1 cropped to the strip is the usual choice; if the artwork is mostly lettering, a photograph looks better cut into a thin strip.'
       : 'One photo does both jobs: the strip on the way in and the background of the page. Landscape, 1920 px wide or more. Logos and artwork belong in a photo frame set to "Show the whole image", or a Finished page.'));
+    if (p.id !== 'home') { const t = tag('image'); if (t) box.append(t); }
   }
 
   // ---- stage 2 parts ----
@@ -494,7 +621,7 @@ export function mount(host, app, params) {
   }
 
   function renderText(box, p) {
-    box.append(tf({ label: 'Paragraph', field: 'body', value: p.body || '', limit: LIMITS.body, multiline: true, rows: 7, help: 'Two or three sentences read best from the bed.', onInput: (v) => commit('Edit text', (pg) => put(pg, 'body', v), 'body') }));
+    box.append(tf({ label: 'Paragraph', field: 'body', value: p.body || '', limit: LIMITS.body, multiline: true, rows: 7, help: 'Two or three sentences read best from the bed.', onInput: (v) => commit('Edit text', (pg) => put(pg, 'body', v), 'body') }), tag('body'));
   }
 
   function listEditor(box, { items, render, onMove, onAdd, onRemove, addLabel, max, selector = '.list-row', empty = 'Nothing here yet.' }) {
@@ -553,16 +680,20 @@ export function mount(host, app, params) {
       box.append(el('p.small.muted', 'No QR link on this page.'));
       if (p.type === 'list') box.append(el('p.help', 'For a QR code on one card only, add it to that card under Cards.'));
       box.append(el('button.btn.sm', { type: 'button', onclick: () => { commit('Add QR link', (pg) => { pg.qr = { label: '', url: 'https://www.cavehotels.com/' }; }); renderSide(); } }, '+ Add QR link'));
+      const t = tag('qr');
+      if (t) box.append(el('p.help', { style: { marginTop: '10px' } }, 'A QR code can also be given only to some rooms (for example a room\'s own ordering link): choose how it differs, then fill in the rooms.'), t);
       return;
     }
     box.append(tf({ label: 'What it does', field: 'qr.label', value: p.qr.label || '', limit: LIMITS.qrLabel, placeholder: 'Book a table at the Firepit', onInput: (v) => commit('Edit QR line', (pg) => { pg.qr.label = v; }, 'qr.label') }));
     const url = tf({ label: 'Web address', field: 'qr.url', value: p.qr.url || '', type: 'url', spellcheck: false, placeholder: 'https://www.cavehotels.com/…', onInput: (v) => { commit('Edit QR address', (pg) => { pg.qr.url = v; }, 'qr.url'); check(v); } });
     const status = el('div.help');
-    const check = (v) => { status.textContent = validQR(v) ? 'Looks right. The TV draws it as a QR code guests scan with their phone.' : 'Not a valid web address yet. It should start with https://'; status.style.color = validQR(v) ? '' : 'var(--red)'; };
+    const check = (v) => { status.textContent = validQR(v) ? 'Looks right. The TV draws it as a QR code guests scan with their phone.' : `Not a valid web address yet: ${linkProblem(v)}.`; status.style.color = validQR(v) ? '' : 'var(--red)'; };
     check(p.qr.url);
     box.append(url, status);
     if (p.type === 'list') box.append(el('p.help', 'On a page of cards the TV shows one QR code beside the cards: the selected card\'s own QR code if it has one, otherwise this one.'));
     box.append(el('button.btn.sm.danger', { type: 'button', style: { marginTop: '8px' }, onclick: () => removeWithUndo('QR link', (pg) => { const q = pg.qr; delete pg.qr; return q; }, (pg, v) => { pg.qr = v; }) }, 'Remove QR link'));
+    const t = tag('qr');
+    if (t) box.append(el('div', { style: { marginTop: '10px' } }, t));
   }
 
   function renderChildren(box, p) {
@@ -595,7 +726,7 @@ export function mount(host, app, params) {
     let title = '';
     let type = 'info';
     const types = ['info', 'menu', 'gallery', 'list', 'finished'];
-    const buttons = types.map((t) => el('button', { type: 'button', class: t === type ? 'on' : '', dataset: { t }, onclick: () => { type = t; buttons.forEach((b) => b.classList.toggle('on', b.dataset.t === t)); } }, el('b', PAGE_TYPES[t].label), el('span', PAGE_TYPES[t].hint)));
+    const buttons = pageChoices(types).map((c) => el('button', { type: 'button', class: c.key === type ? 'on' : '', dataset: { t: c.key }, onclick: () => { type = c.key; buttons.forEach((b) => b.classList.toggle('on', b.dataset.t === c.key)); } }, el('b', c.label), el('span', c.hint)));
     const field = textField({ label: 'Title', value: '', limit: LIMITS.title, id: uid('t'), onInput: (v) => { title = v; } });
     modal({ title: `Add a page under ${p.title}`, body: el('div', el('div.tpl', ...buttons), field),
       actions: [{ label: 'Cancel' }, { label: 'Add', primary: true, onClick: () => {
@@ -610,50 +741,297 @@ export function mount(host, app, params) {
 
   function renderMenuPart(box, p) {
     const n = (p.sections || []).reduce((a, s) => a + (s.items || []).length, 0);
+    if (versionKey !== null) {
+      box.append(el('p.small', `${plural((p.sections || []).length, 'part')}, ${plural(n, 'dish', 'dishes')}.`));
+      box.append(el('p.help', 'Every version shows the master\'s menu. Dishes are edited on the Menus screen, for every TV.'));
+      return;
+    }
     box.append(el('p.small', `${plural((p.sections || []).length, 'part')}, ${plural(n, 'dish', 'dishes')}.`));
     box.append(el('p.help', 'Dishes, descriptions, prices and tags are edited on the Menus screen, where the whole menu is laid out as a table.'));
     box.append(el('button.btn.pri.sm', { type: 'button', style: { marginTop: '8px' }, onclick: () => app.go('menus', { menu: pageId }) }, 'Edit dishes in Menus'));
   }
 
-  // Gallery frames: each a photo or a silent film loop (Rhys, 9 Nov 2026).
+  // ---- the gallery (phase B: GALLERY-CONTRACT.md, SPEC 5.2) ----
+  /** One change to a gallery's frames: fn(frames, page) edits a copy; it is written back with setFrames. */
+  const editFrames = (label, fn, key) => commit(label, (pg) => { const fr = framesCopy(pg); fn(fr, pg); setFrames(pg, fr); }, key);
+
+  /** "This gallery": style, plays by itself, seconds per frame, the intro. */
+  function renderGallerySettings(box, p) {
+    const o = galleryOptions(p);
+    const seg = (label, choices, current, onPick, aria) => {
+      const g = el('div.seg', { role: 'group', 'aria-label': aria || label });
+      for (const [v, text] of choices) g.append(el('button', { type: 'button', class: v === current ? 'on' : '', 'aria-pressed': String(v === current), dataset: { v: String(v) }, onclick: () => onPick(v) }, text));
+      return el('div.field', el('label', el('span', label)), g);
+    };
+    box.append(seg('Style', [['thumbnails', 'Thumbnails'], ['slideshow', 'Slideshow']], o.style, (v) => { commit(`Gallery style: ${STYLES[v]}`, (pg) => setOptions(pg, { style: v })); renderSide(); }, 'Gallery style'));
+    box.append(el('p.help', { style: { marginTop: '-4px', marginBottom: '10px' } }, o.style === 'slideshow'
+      ? 'No thumbnails: the frames turn by themselves from the moment the page opens. Left and Right step through them and hold the slideshow for 30 seconds; Select opens the frame full screen.'
+      : 'A row of thumbnails along the bottom (and the chapter names above it, when frames have chapters). Select opens a frame full screen; Play/Pause starts a slideshow.'));
+    if (o.style === 'thumbnails') {
+      const on = el('input', { type: 'checkbox', checked: o.autoplay, 'data-field': 'gallery.autoplay', onchange: (e) => { commit(e.target.checked ? 'Plays by itself' : 'Does not play by itself', (pg) => setOptions(pg, { autoplay: e.target.checked })); renderSide(); } });
+      box.append(el('div.field', el('label.check', on, el('span', el('b', 'Plays by itself'), ' after 20 seconds with no press'))));
+    }
+    if (o.style === 'slideshow' || o.autoplay) {
+      const choices = SECONDS_CHOICES.map((n) => [n, `${n} s`]);
+      if (!SECONDS_CHOICES.includes(o.seconds)) choices.push([o.seconds, `${o.seconds} s`]);
+      box.append(seg('Seconds per frame', choices, o.seconds, (v) => { commit(`Seconds per frame: ${v}`, (pg) => setOptions(pg, { seconds: v })); renderSide(); }));
+      box.append(el('p.help', { style: { marginTop: '-4px', marginBottom: '12px' } }, 'A silent film plays through before the next frame. 8 seconds suits most photos.'));
+    }
+    box.append(tf({ label: 'Intro', field: 'body', value: p.body || '', limit: LIMITS.galleryIntro, multiline: true, rows: 3, placeholder: 'Six thousand five hundred yards of Kent parkland. Hole by hole.',
+      help: 'Optional. One or two short sentences under the title. Not shown full screen.', onInput: (v) => commit('Edit intro', (pg) => put(pg, 'body', v), 'body') }));
+    box.append(el('p.help', 'The QR code is under "QR link": it sits bottom-right, above the thumbnails, and is hidden full screen.'));
+  }
+
+  /** Photos and films: grouped by chapter, a frame's caption, chapter, fit and (for a film) sound. */
   function renderImages(box, p) {
     const frames = galleryFrames(p);
-    const edit = (label, fn) => commit(label, (pg) => { const fr = framesCopy(pg); fn(fr); setFrames(pg, fr); });
-    listEditor(box, {
-      items: frames,
-      render: (fr, i) => {
-        const th = el('div.thumb' + (fr.film ? '.film' : ''));
+    const sel = Math.max(0, Math.min(state.frame || 0, frames.length - 1));
+    state.frame = sel;
+    const runs = chapterRuns(frames);
+    const named = chapterNames(frames);
+    const full = frames.length >= LIMITS.galleryMax;
+    box.append(el('div.small.muted', { style: { marginBottom: '8px' } }, frames.length
+      ? `${plural(frames.length, 'frame')}${named.length ? ` in ${plural(named.length, 'chapter')}` : ''} · ${frames.filter((x) => (x.caption || '').trim()).length} with a caption`
+      : 'No frames yet.'));
+    box.append(el('div.row.wrap', { style: { gap: '6px', marginBottom: '10px' } },
+      el('button.btn.sm.pri', { type: 'button', disabled: full, onclick: () => addGalleryPhotos(p) }, '+ Add photos'),
+      el('button.btn.sm', { type: 'button', disabled: full, onclick: () => addGalleryFilm(p) }, '+ Add a film'),
+      el('button.btn.sm', { type: 'button', disabled: !frames.length, onclick: () => pasteCaptions(p) }, 'Paste captions…')));
+    const list = el('div.gframes');
+    runs.forEach((r, ri) => {
+      const g = el('div.gchapter', { dataset: { chapter: r.name } });
+      const head = el('div.gchapter-h', el('span.n', r.name || (hasChapters(frames) ? 'No chapter' : 'All frames')), el('span.muted.small', plural(r.count, 'frame')));
+      if (r.key) {
+        head.append(el('span.spacer'),
+          el('button.mini', { type: 'button', 'aria-label': `Move ${r.name} earlier`, title: 'Move this chapter earlier', disabled: ri === 0, onclick: () => moveChapter(ri, -1) }, svgIcon('up', 14)),
+          el('button.mini', { type: 'button', 'aria-label': `Move ${r.name} later`, title: 'Move this chapter later', disabled: ri === runs.length - 1, onclick: () => moveChapter(ri, 1) }, svgIcon('down', 14)),
+          el('button.btn.link.sm', { type: 'button', onclick: () => renameChapter(r) }, 'Rename'));
+      }
+      g.append(head);
+      const grid = el('div.gframe-grid');
+      for (let i = r.start; i < r.start + r.count; i++) {
+        const fr = frames[i];
+        const th = el('div.th' + (fr.fit === 'whole' ? '.whole' : ''));
         const url = app.media.url(frameStill(fr), 800);
         if (url) th.style.backgroundImage = `url("${url}")`;
-        if (fr.film) th.append(el('span.play'));
-        if (!fr.film) {
-          return el('div.photo-pick', { dataset: { field: `images.${i}` }, tabindex: '-1' }, th, el('div', el('div.small', `${i + 1}. ${app.media.label(fr.image)}`),
-            el('button.btn.sm', { type: 'button', style: { marginTop: '4px' }, onclick: () => pickPhoto(app, { onPick: (s2) => edit('Change gallery photo', (list) => { list[i] = { image: s2 }; }) }) }, 'Swap')));
-        }
-        const missingPoster = !fr.poster;
-        return el('div', { dataset: { field: `images.${i}.film` }, tabindex: '-1' },
-          el('div.photo-pick', th, el('div', el('div.small', el('b', `${i + 1}. Film: `), app.media.label(fr.film)),
-            el('div.row.wrap', { style: { marginTop: '6px' } },
-              el('button.btn.sm', { type: 'button', onclick: () => pickFilm(app, { silentOnly: true, onPick: (src, rec) => edit('Change gallery film', (list) => { list[i] = { film: src, ...(rec.poster ? { poster: rec.poster } : {}) }; }) }) }, 'Swap film'),
-              el('button.btn.sm' + (missingPoster ? '.pri' : ''), { type: 'button', dataset: { field: `images.${i}.poster` }, onclick: () => posterCapture(app, fr.film, { title: p.title, previous: fr.poster || null, onDone: (ps) => edit('Set poster', (list) => { list[i].poster = ps; }) }) }, fr.poster ? 'Change poster' : 'Capture a poster')))),
-          el('div', { style: { marginTop: '6px' } }, filmInfoBox(app, fr.film)),
-          missingPoster ? el('div.help', { style: { color: 'var(--red)' } }, 'No poster yet. The TV shows it until the film has loaded; capture a frame.') : null);
-      },
-      onMove: (a, b) => edit('Reorder photos and films', (list) => moveInList(list, a, b)),
-      onAdd: () => pickPhoto(app, { onPick: (s2) => { edit('Add gallery photo', (list) => { list.push({ image: s2 }); }); renderSide(); } }),
-      onRemove: (i) => removeWithUndo(frames[i].film ? 'film' : 'photo', (pg) => { const fr = framesCopy(pg); const [v] = fr.splice(i, 1); setFrames(pg, fr); return v; }, (pg, v) => { const fr = framesCopy(pg); fr.splice(i, 0, v); setFrames(pg, fr); }),
-      addLabel: 'Add photo', max: LIMITS.galleryMax,
+        if (fr.film) th.append(el('span.gmark', fr.sound === true ? 'Film · sound' : 'Film · loop'));
+        else if (fr.fit === 'whole') th.append(el('span.gmark', 'Whole'));
+        th.append(el('span.gnum', String(i + 1)));
+        const tile = el('button.gframe' + (i === sel ? '.sel' : ''), { type: 'button', draggable: 'true', dataset: { i: String(i) }, 'aria-label': `Frame ${i + 1}${fr.caption ? `: ${fr.caption}` : ''}`, 'aria-pressed': String(i === sel),
+          onclick: () => { state.frame = i; state.field = `images.${i}`; renderSide(); preview.setSelectedField(`${pageId}|images.${i}`); } },
+          th, el('span.gcap' + (fr.caption ? '' : '.muted'), fr.caption || 'No caption'));
+        grid.append(tile);
+      }
+      sortable(grid, '.gframe', (a, b) => editFrames('Reorder frames', (list) => { const [x] = list.splice(r.start + a, 1); list.splice(r.start + b, 0, x); state.frame = r.start + b; }));
+      g.append(grid);
+      // The selected frame's settings open under its chapter, so they are next to it even in a long gallery.
+      if (sel >= r.start && sel < r.start + r.count) g.append(frameProps(p, frames, sel));
+      list.append(g);
     });
-    box.append(el('div.row.wrap', { style: { marginTop: '6px' } }, el('button.btn.sm', { type: 'button', disabled: frames.length >= LIMITS.galleryMax, onclick: () => addGalleryFilm(p) }, '+ Add a silent film')));
-    box.append(el('p.help', { style: { marginTop: '10px' } }, `Up to ${LIMITS.galleryMax}. The first one shows when the page opens; guests move along the row with the remote. A film plays on a silent loop, like a moving photo. Films with a sound track cannot be chosen unless marked as silent in Media.`));
+    box.append(list);
+    box.append(el('p.help', { style: { marginTop: '12px' } }, `Up to ${LIMITS.galleryMax}. Frames are kept together by chapter; drag a frame within its chapter, or give it another chapter to move it there. A photo can fill the TV or show whole; a film is a silent loop (plays in place) or plays with sound (a play mark; Select plays it).`));
+  }
+
+  /** The selected frame's settings. */
+  function frameProps(p, frames, i) {
+    const fr = frames[i];
+    const f = `images.${i}`;
+    const box = el('div.gprops', { dataset: { field: f }, tabindex: '-1' });
+    const c = frameCount(frames, i);
+    box.append(el('h3', { style: { margin: '14px 0 8px' } }, `Frame ${i + 1}`, el('span.muted', { style: { fontWeight: 400 } }, c.chapter ? ` · ${c.chapter}, ${c.text}` : ` of ${frames.length}`)));
+    const big = el('div.gbig' + (fr.fit === 'whole' ? '.whole' : ''));
+    const url = app.media.url(frameStill(fr), 800);
+    if (url) big.style.backgroundImage = `url("${url}")`;
+    if (fr.film) big.append(el('span.play'));
+    box.append(big);
+    const capField = tf({ label: 'Caption', field: `${f}.caption`, value: fr.caption || '', limit: LIMITS.frameCaption, placeholder: fr.film ? 'From the air: the whole hole in one flight' : 'Par 4, 389 yards. Dogleg left past the old oak',
+      help: 'One line under the title, and bottom-left full screen.',
+      onInput: (v) => { editFrames('Edit caption', (list) => { if (list[i]) list[i].caption = v; }, `${f}.caption`); const t = side.querySelector(`.gframe[data-i="${i}"] .gcap`); if (t) { t.textContent = v || 'No caption'; t.classList.toggle('muted', !v); } } });
+    box.append(capField);
+    // Chapter: picked from the names already used, or a new one; set when the box is left (Enter or Tab).
+    const dl = el('datalist', { id: uid('ch') });
+    for (const n of chapterNames(frames)) dl.append(el('option', { value: n }));
+    const chCount = el('span.count');
+    const chIn = el('input.in', { type: 'text', value: fr.group || '', maxlength: String(LIMITS.chapter), list: dl.id, placeholder: hasChapters(frames) ? 'Choose or type' : 'e.g. Hole 1', autocomplete: 'off', 'data-field': `${f}.group`, id: uid('chi') });
+    const count = () => { const n = chIn.value.length; chCount.textContent = `${n} / ${LIMITS.chapter}`; chCount.className = 'count' + (n > LIMITS.chapter ? ' red' : n >= Math.ceil(LIMITS.chapter * 0.9) ? ' amber' : ''); };
+    chIn.addEventListener('input', count);
+    chIn.addEventListener('change', () => setChapter(i, chIn.value));
+    chIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); chIn.blur(); } });
+    count();
+    box.append(el('div.field', el('label', { for: chIn.id }, el('span', 'Chapter'), chCount), chIn, dl,
+      el('div.help', hasChapters(frames) ? 'Pick a chapter already used, or type a new one. Frames are kept together by chapter, in the order the chapters first appear.' : 'Optional. Name a chapter ("Hole 1") and a row of chapter names appears above the thumbnails.')));
+    // Fit.
+    const fitRow = el('div.fit', { role: 'radiogroup', 'aria-label': `Frame ${i + 1} fit` });
+    for (const [v, label, help] of [['fill', 'Fill', 'Fills the TV, cropped to 16:9. Right for photographs.'], ['whole', 'Show whole', 'The whole image on the dark ground, never cropped. Plans, scorecards, posters.']]) {
+      const on = (fr.fit === 'whole' ? 'whole' : 'fill') === v;
+      fitRow.append(el('label.fit-opt' + (on ? '.on' : ''), el('input', { type: 'radio', name: `gfit-${i}`, checked: on, 'data-field': v === 'whole' ? `${f}.fit` : undefined, onchange: () => { editFrames(v === 'whole' ? 'Show the whole image' : 'Fill the frame', (list) => { list[i].fit = v === 'whole' ? 'whole' : undefined; }); renderSide(); } }), el('span', el('b', label), el('small', help))));
+    }
+    box.append(el('div.field', el('label', el('span', 'Fit')), fitRow));
+    if (fr.film) {
+      const info = app.media.film(fr.film);
+      const soundRow = el('div.fit', { role: 'radiogroup', 'aria-label': `Frame ${i + 1}: how the film plays` });
+      for (const [v, label, help] of [[false, 'Silent loop', 'Plays in place, silently, like a moving photo. Must have no sound track (or be marked silent in Media).'], [true, 'Plays with sound', 'Shows its poster with a play mark; Select plays it full screen with sound; Menu comes back to this frame.']]) {
+        const on = (fr.sound === true) === v;
+        soundRow.append(el('label.fit-opt' + (on ? '.on' : ''), el('input', { type: 'radio', name: `gsound-${i}`, checked: on, 'data-field': v ? `${f}.sound` : undefined, onchange: () => { editFrames(v ? 'Film plays with sound' : 'Film is a silent loop', (list) => { list[i].sound = v || undefined; }); renderSide(); } }), el('span', el('b', label), el('small', help))));
+      }
+      box.append(el('div.field', el('label', el('span', 'This film')), soundRow));
+      if (info) box.append(el('div', { style: { margin: '-4px 0 8px' } }, filmInfoBox(app, fr.film)));
+      const missingPoster = !fr.poster;
+      box.append(el('div.row.wrap', { style: { gap: '6px' } },
+        el('button.btn.sm' + (missingPoster ? '.pri' : ''), { type: 'button', 'data-field': `${f}.poster`, onclick: () => posterCapture(app, fr.film, { title: fr.caption || p.title, previous: fr.poster || null, onDone: (ps) => editFrames('Set poster', (list) => { list[i].poster = ps; }) }) }, fr.poster ? 'Change poster' : 'Capture a poster'),
+        el('button.btn.sm', { type: 'button', onclick: () => pickFilm(app, { onPick: (src, rec) => { editFrames('Change gallery film', (list) => { list[i] = { ...list[i], film: src, poster: rec.poster || undefined, sound: soundFor(rec, list[i].sound) }; }); renderSide(); } }) }, 'Swap film')));
+      if (missingPoster) box.append(el('div.help', { style: { color: 'var(--red)' } }, 'No poster yet. The TV shows it until the film has loaded; capture a frame.'));
+    } else {
+      box.append(el('div.row.wrap', { style: { gap: '6px' } }, el('button.btn.sm', { type: 'button', onclick: () => pickPhoto(app, { use: 'gallery', onPick: (src) => { editFrames('Change gallery photo', (list) => { list[i] = { ...list[i], image: src }; }); renderSide(); } }) }, 'Swap photo')));
+    }
+    const r = chapterRuns(frames).find((x) => i >= x.start && i < x.start + x.count);
+    box.append(el('div.row.wrap', { style: { gap: '6px', marginTop: '10px' } },
+      el('button.btn.sm', { type: 'button', disabled: i <= r.start, onclick: () => { editFrames('Move frame earlier', (list) => { const [x] = list.splice(i, 1); list.splice(i - 1, 0, x); }); state.frame = i - 1; renderSide(); } }, '← Earlier'),
+      el('button.btn.sm', { type: 'button', disabled: i >= r.start + r.count - 1, onclick: () => { editFrames('Move frame later', (list) => { const [x] = list.splice(i, 1); list.splice(i + 1, 0, x); }); state.frame = i + 1; renderSide(); } }, 'Later →'),
+      el('span.spacer'),
+      el('button.btn.sm.danger', { type: 'button', onclick: () => removeWithUndo(fr.film ? 'film' : 'photo', (pg) => { const l = framesCopy(pg); const [v] = l.splice(i, 1); setFrames(pg, l); return v; }, (pg, v) => { const l = framesCopy(pg); l.splice(i, 0, v); setFrames(pg, l); }) }, 'Remove')));
+    return box;
+  }
+
+  /** A film with a sound track that is not marked silent can only play with sound; one with no sound track starts as a silent loop. */
+  const soundFor = (rec, current) => {
+    if (rec && rec.audio === true && !rec.silent) return true;
+    if (rec && rec.audio === false) return current === true ? true : undefined;
+    return current;
+  };
+
+  /** Puts frame i in a chapter (an existing one's spelling when it is the same chapter), keeping chapters together. */
+  function setChapter(i, typed) {
+    const frames = galleryFrames(page());
+    const name = matchChapter(frames, typed);
+    if (chapterKey(frames[i]?.group) === chapterKey(name) && cleanChapter(frames[i]?.group) === name) return;
+    let at = i;
+    editFrames(name ? `Chapter: ${name}` : 'No chapter', (list) => {
+      const fr = list[i];
+      fr.group = name || undefined;
+      // Into its chapter: after that chapter's last frame (a new chapter stays where it is).
+      const others = list.filter((x, k) => k !== i);
+      const last = name ? others.map((x) => chapterKey(x.group)).lastIndexOf(chapterKey(name)) : -1;
+      if (last >= 0) { others.splice(last + 1, 0, fr); list.splice(0, list.length, ...others); }
+      const ordered = orderByChapter(list);
+      list.splice(0, list.length, ...ordered);
+      at = list.indexOf(fr);
+    });
+    state.frame = at;
+    renderSide();
+    preview.setSelectedField(`${pageId}|images.${at}`);
+  }
+
+  function moveChapter(ri, dir) {
+    editFrames('Reorder chapters', (list) => {
+      const runs = chapterRuns(list);
+      const parts = runs.map((r) => list.slice(r.start, r.start + r.count));
+      const [x] = parts.splice(ri, 1);
+      parts.splice(ri + dir, 0, x);
+      list.splice(0, list.length, ...parts.flat());
+    });
+    renderSide();
+  }
+
+  async function renameChapter(r) {
+    const v = await promptModal(`Rename ${r.name}`, 'Chapter name', { value: r.name, limit: LIMITS.chapter, okLabel: 'Rename' });
+    if (v === null) return;
+    const frames = galleryFrames(page());
+    const others = frames.filter((x, k) => k < r.start || k >= r.start + r.count);
+    const name = matchChapter(others, v);
+    editFrames(name ? `Rename chapter ${r.name} to ${name}` : `Take away chapter ${r.name}`, (list) => {
+      for (let k = r.start; k < r.start + r.count; k++) list[k].group = name || undefined;
+      const ordered = orderByChapter(list);
+      list.splice(0, list.length, ...ordered);
+    });
+    renderSide();
+  }
+
+  /** Several photos at once, in name order, into the selected frame's chapter (after its last frame). */
+  function addGalleryPhotos(p) {
+    const frames = galleryFrames(p);
+    const room = LIMITS.galleryMax - frames.length;
+    const chapter = frames.length ? cleanChapter(frames[Math.min(state.frame || 0, frames.length - 1)].group) : '';
+    pickPhoto(app, { use: 'gallery', max: room, onPickMany: (srcs) => {
+      let first = 0;
+      editFrames(srcs.length > 1 ? `Add ${srcs.length} gallery photos` : 'Add gallery photo', (list) => {
+        const add = srcs.slice(0, LIMITS.galleryMax - list.length).map((image) => ({ image, ...(chapter ? { group: chapter } : {}) }));
+        const last = chapter ? list.map((x) => chapterKey(x.group)).lastIndexOf(chapterKey(chapter)) : list.length - 1;
+        first = last + 1;
+        list.splice(first, 0, ...add);
+      });
+      state.frame = first;
+      renderSide();
+      toast(`${plural(srcs.length, 'photo')} added${chapter ? ` to ${chapter}` : ''}.`, { ms: 4000 });
+    } });
   }
 
   function addGalleryFilm(p) {
-    pickFilm(app, { silentOnly: true, onPick: (src, rec) => {
-      commit('Add gallery film', (pg) => { const fr = framesCopy(pg); fr.push({ film: src, ...(rec.poster ? { poster: rec.poster } : {}) }); setFrames(pg, fr); });
+    const frames = galleryFrames(p);
+    const chapter = frames.length ? cleanChapter(frames[Math.min(state.frame || 0, frames.length - 1)].group) : '';
+    pickFilm(app, { onPick: (src, rec) => {
+      let at = 0;
+      const sound = soundFor(rec, undefined);
+      editFrames('Add gallery film', (list) => {
+        const fr = { film: src, ...(rec.poster ? { poster: rec.poster } : {}), ...(chapter ? { group: chapter } : {}), ...(sound ? { sound: true } : {}) };
+        const last = chapter ? list.map((x) => chapterKey(x.group)).lastIndexOf(chapterKey(chapter)) : list.length - 1;
+        at = last + 1;
+        list.splice(at, 0, fr);
+      });
+      state.frame = at;
       renderSide();
-      if (!rec.poster) posterCapture(app, src, { title: p.title, onDone: (ps) => commit('Set poster', (pg) => { const fr = framesCopy(pg); const hit = fr.find((x) => x.film === src && !x.poster); if (hit) hit.poster = ps; setFrames(pg, fr); }) });
+      toast(sound ? 'Film added. It has a sound track, so it plays with sound: a play mark, and Select plays it full screen.' : 'Film added as a silent loop. Choose "Plays with sound" on the frame if guests should press play.', { ms: 8000 });
+      if (!rec.poster) posterCapture(app, src, { title: p.title, onDone: (ps) => editFrames('Set poster', (list) => { const hit = list.find((x) => x.film === src && !x.poster); if (hit) hit.poster = ps; }) });
     } });
+  }
+
+  /** Paste captions: one line per frame, in order; "chapter<tab>caption" sets the chapter too. Nothing changes until "Use these captions". */
+  function pasteCaptions(p) {
+    const frames = galleryFrames(p);
+    let fromSelected = false;
+    const area = el('textarea.in', { rows: 10, placeholder: 'Par 4, 412 yards. A generous opening drive over the brook\nFrom the air: the whole hole in one flight\nPar 3, 176 yards. All carry', 'aria-label': 'Captions, one per line', spellcheck: 'true' });
+    const report = el('div.small', { role: 'status', style: { marginTop: '8px' } });
+    const startBox = el('label.check', el('input', { type: 'checkbox', onchange: (e) => { fromSelected = e.target.checked; check(); } }), `Start at the selected frame (${(state.frame || 0) + 1}) instead of frame 1`);
+    let plan = null;
+    const check = () => {
+      clear(report);
+      const lines = parseCaptions(area.value);
+      const start = fromSelected ? state.frame || 0 : 0;
+      const room = frames.length - start;
+      const use = lines.slice(0, room);
+      const long = use.map((l, k) => (l.caption.length > LIMITS.frameCaption ? k : -1)).filter((k) => k >= 0);
+      const longCh = use.map((l, k) => (l.chapter && l.chapter.length > LIMITS.chapter ? k : -1)).filter((k) => k >= 0);
+      plan = { start, use };
+      if (!lines.length) { report.append(el('span.muted', 'Paste one caption per line, in the order the frames are in. An empty line leaves that frame with no caption.')); okBtn.disabled = true; return; }
+      okBtn.disabled = !use.length;
+      const bits = [el('div', el('strong', `${plural(use.length, 'line')} for frames ${start + 1} to ${start + use.length}`), ` (of ${frames.length}).`)];
+      if (lines.length > room) bits.push(el('div', { style: { color: 'var(--amber)' } }, `${plural(lines.length - room, 'line')} more than there are frames; ${lines.length - room === 1 ? 'it is' : 'they are'} left out.`));
+      if (use.length < room) bits.push(el('div.muted', `Frames ${start + use.length + 1} to ${frames.length} keep their captions.`));
+      const blanks = use.filter((l) => !l.caption).length;
+      if (blanks) bits.push(el('div.muted', `${plural(blanks, 'empty line')}: ${blanks === 1 ? 'that frame has' : 'those frames have'} no caption.`));
+      if (use.some((l) => l.chapter !== null)) bits.push(el('div', 'Lines with a tab set the chapter too (chapter, then caption); chapters are put together afterwards.'));
+      for (const k of long) bits.push(el('div', { style: { color: 'var(--red)' } }, `Line ${k + 1} is ${use[k].caption.length} characters; a caption can be ${LIMITS.frameCaption}. It is kept and shown red so you can shorten it; the page is held back until then.`));
+      for (const k of longCh) bits.push(el('div', { style: { color: 'var(--red)' } }, `Line ${k + 1}: the chapter "${use[k].chapter}" is over ${LIMITS.chapter} characters.`));
+      report.append(...bits);
+    };
+    area.addEventListener('input', check);
+    const m = modal({ title: `Paste captions for ${p.title}`, wide: true,
+      body: el('div', el('p.help', { style: { marginBottom: '8px' } }, 'One caption per line, in the order of the frames (as listed, chapter by chapter). From a spreadsheet: one column of captions, or two columns (chapter, caption).'), area, startBox, report),
+      actions: [{ label: 'Cancel' }, { label: 'Use these captions', primary: true, disabled: true, onClick: () => {
+        if (!plan || !plan.use.length) return false;
+        const { start, use } = plan;
+        editFrames(`Paste ${plural(use.length, 'caption')}`, (list) => {
+          use.forEach((l, k) => { const fr = list[start + k]; if (!fr) return; fr.caption = l.caption || undefined; if (l.chapter !== null) fr.group = l.chapter ? matchChapter(list, l.chapter) : undefined; });
+          const ordered = orderByChapter(list);
+          list.splice(0, list.length, ...ordered);
+        });
+        renderSide();
+        toast(`${plural(use.length, 'caption')} pasted. Undo puts the old ones back.`, { action: 'Undo', onAction: () => model.undo() });
+        return true;
+      } }] });
+    const okBtn = m.box.querySelector('.actions .btn.pri');
+    check();
+    area.focus();
   }
 
   function renderItems(box, p) {
@@ -684,17 +1062,20 @@ export function mount(host, app, params) {
   /** A card's own QR code (ListItem.qr): same checks as the page's QR link. */
   function cardQR(it, i) {
     const box = el('div.card-qr', { style: { marginTop: '10px' } });
+    const cardTag = it.id ? tag(cardField(it.id), `QR code on card "${it.title || i + 1}"`) : null;
     if (!it.qr) {
       box.append(el('button.btn.sm', { type: 'button', onclick: () => { commit('Add QR code to card', (pg) => { pg.items[i].qr = { label: '', url: 'https://www.cavehotels.com/' }; }); renderSide(); setTimeout(() => side.querySelector(`[data-field="items.${i}.qr.url"]`)?.focus(), 0); } }, '+ Add a QR code to this card'));
+      if (cardTag) box.append(el('div', { style: { marginTop: '6px' } }, cardTag));
       return box;
     }
     box.append(el('div.small', el('b', 'QR code for this card')));
     box.append(tf({ label: 'What it does', field: `items.${i}.qr.label`, value: it.qr.label || '', limit: LIMITS.qrLabel, placeholder: 'Tickets and times', onInput: (v) => commit('Edit card QR line', (pg) => { pg.items[i].qr.label = v; }, `items.${i}.qr.label`) }));
     const status = el('div.help');
-    const check = (v) => { status.textContent = validQR(v) ? 'Looks right. Shown beside the cards while this card is selected.' : 'Not a valid web address yet. It should start with https://'; status.style.color = validQR(v) ? '' : 'var(--red)'; };
+    const check = (v) => { status.textContent = validQR(v) ? 'Looks right. Shown beside the cards while this card is selected.' : `Not a valid web address yet: ${linkProblem(v)}.`; status.style.color = validQR(v) ? '' : 'var(--red)'; };
     box.append(tf({ label: 'Web address', field: `items.${i}.qr.url`, value: it.qr.url || '', type: 'url', spellcheck: false, placeholder: 'https://www.cavehotels.com/…', onInput: (v) => { commit('Edit card QR address', (pg) => { pg.items[i].qr.url = v; }, `items.${i}.qr.url`); check(v); } }), status);
     check(it.qr.url);
     box.append(el('button.btn.sm.danger', { type: 'button', style: { marginTop: '6px' }, onclick: () => removeWithUndo('QR code from the card', (pg) => { const q = pg.items[i].qr; delete pg.items[i].qr; return q; }, (pg, v) => { pg.items[i].qr = v; }) }, 'Remove QR code'));
+    if (cardTag) box.append(el('div', { style: { marginTop: '6px' } }, cardTag));
     return box;
   }
 
@@ -709,13 +1090,16 @@ export function mount(host, app, params) {
     let removed = null;
     commit(`Remove ${what}`, (pg) => { removed = take(pg); });
     renderSide();
-    toast(`Removed the ${what}.`, { action: 'Undo', onAction: () => { model.commit(`Restore ${what}`, (d) => putBack(model.find(pageId, d).page, removed), { origin: 'editor', undoable: false }); renderSide(); } });
+    toast(`Removed the ${what}.`, { action: 'Undo', onAction: () => { model.commit(`Restore ${what}`, lens((pg) => putBack(pg, removed)), { origin: 'editor', undoable: false }); renderSide(); } });
   }
 
   renderSub();
+  renderBanner();
   renderRail();
   renderCentre();
   renderSide();
+  // Room names for "Preview as" and the tags may have changed on the Rooms screen.
+  if (SERVER) app.loadRooms().then(() => { renderBanner(); renderCentre(); if (!side.contains(document.activeElement)) renderSide(); });
 
   // A link can open the editor in remote mode and press keys, e.g.
   // ?remote=down,down,enter — handy for sharing and for screenshots.
@@ -730,14 +1114,23 @@ export function mount(host, app, params) {
   return {
     update(ev) {
       if (!model.find(pageId)) { app.go('home'); return; }
+      if (versionKey !== null && !vrec()) { app.go('editor', { page: pageId }); return; }
       if (ev.type === 'media') { renderRail(); renderSide(); return; }
       renderSub();
+      renderBanner();
       renderRail();
       refreshPreview(false);
       // Our own typing: keep the side panel (and its focus) as it is.
       // Anything else (undo, list changes) rebuilds it.
       if (ev.origin !== 'editor' || !ev.label.startsWith('Edit')) renderSide();
-      else { const c = side.querySelector('#checks'); if (c) { clear(c); c.append(checks(page())); } }
+      else {
+        const c = side.querySelector('#checks'); if (c) { clear(c); c.append(checks(page())); }
+        // A version: keep the Changed marks in step with typing.
+        if (versionKey !== null) {
+          const changed = new Set(Object.keys(patchNow()));
+          side.querySelectorAll('[data-field]').forEach((n) => (n.closest('.field') || n).classList.toggle('changed', changed.has(n.dataset.field.split('.')[0])));
+        }
+      }
     },
     unmount() { preview?.destroy(); },
   };

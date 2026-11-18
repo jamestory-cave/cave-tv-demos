@@ -1,11 +1,15 @@
 // The editor's model: one draft document in today's ContentBundle shape, plus
-// two Builder-only marks that never reach the TV: `hidden` on a page or a
-// dish, and nothing else. bundle.js strips them when it builds the bundle.
+// Builder-only parts that never reach the TV: `hidden` on a page or a dish,
+// an `id` on each card (so a card's QR code can differ by room), and, on the
+// hotel server, `overrides` next to the tree (overrides.js). bundle.js
+// leaves all of them out when it builds the bundle.
 //
 // Every change goes through `commit`, which keeps an undo stack and tells the
 // screens. Screens never mutate the draft directly.
 
 import { clone, slug, randomId } from './util.js';
+import { ensureCardIds, publishedForDraft } from './overrides.js';
+import { GALLERY_PRESETS } from './gallery.js';
 
 export const PAGE_TYPES = {
   hub:     { label: 'Section',       hint: 'Holds pages. Opens as strips, like Eat & Drink.' },
@@ -18,6 +22,18 @@ export const PAGE_TYPES = {
 };
 
 export { ALLOWS } from './bundle.js';
+
+/**
+ * What the "Add a page" dialogs offer: each page type, except that a gallery
+ * comes as its two starting presets (SPEC 5.5): "Photo gallery" and "Hole by
+ * hole". A preset only fills in the new page; nothing links back to it.
+ * Returns [{key: 'info' | 'gallery:photo' | …, label, hint}].
+ */
+export function pageChoices(types) {
+  return types.flatMap((t) => (t === 'gallery'
+    ? Object.entries(GALLERY_PRESETS).sort(([a], [b]) => (a === 'photo' ? -1 : b === 'photo' ? 1 : 0)).map(([k, v]) => ({ key: `gallery:${k}`, label: v.label, hint: v.hint }))
+    : [{ key: t, label: PAGE_TYPES[t].label, hint: PAGE_TYPES[t].hint }]));
+}
 
 const listeners = new Set();
 
@@ -48,13 +64,20 @@ export const model = {
       this.draft = { version: 1, hotel: emptyHotel(), home: { id: 'home', type: 'home', title: 'Home', children: [] } };
       this.basedOn = { revision: 0 };
     }
+    if (!savedDraft?.doc && published?.overrides) this.draft.overrides = publishedForDraft(published.overrides, ensureCardIds(this.draft));
+    ensureCardIds(this.draft);
     this.undoStack = [];
     this.emit({ type: 'load' });
   },
 
   /** Throws away the draft and starts again from what is published. */
   reset() {
-    this.draft = clone(this.published?.bundle) || this.draft;
+    this.draft = ensureCardIds(clone(this.published?.bundle) || this.draft);
+    // On the hotel server the overrides go back to what is live too.
+    if (this.published?.overrides) {
+      const live = publishedForDraft(this.published.overrides, this.draft);
+      if (Object.keys(live).length) this.draft.overrides = live; else delete this.draft.overrides;
+    } else delete this.draft.overrides;
     this.basedOn = { revision: this.published?.version?.revision ?? 0, bundle: this.published?.version?.bundle };
     this.undoStack = [];
     this.emit({ type: 'change', label: 'Reset my changes', origin: 'reset' });
@@ -74,11 +97,18 @@ export const model = {
     }
     this.lastCoalesce = coalesce;
     mutate(this.draft);
+    ensureCardIds(this.draft, { random: () => randomId(6) });   // a card made by this edit
     this.emit({ type: 'change', label, origin: opts.origin || null, pageId: opts.pageId || null });
   },
 
   get canUndo() { return this.undoStack.length > 0; },
   get undoLabel() { return this.undoStack.length ? this.undoStack[this.undoStack.length - 1].label : ''; },
+
+  /** Takes a document from elsewhere (a colleague's save, a merge, a restore) as the draft. */
+  adopt(doc) {
+    this.draft = ensureCardIds(doc);
+    return this.draft;
+  },
 
   undo() {
     const entry = this.undoStack.pop();
@@ -162,8 +192,10 @@ export function emptyHotel() {
   return { name: '', tagline: '', reception: '', roomService: '', wifiName: '', wifiPassword: '', checkout: '' };
 }
 
-/** A fresh page of `type` with example text a member of staff will replace. */
+/** A fresh page of `type` with example text a member of staff will replace. `type` may be 'gallery:<preset>' (pageChoices). */
 export function newPage(type, title, id) {
+  const [kind, preset] = String(type).split(':');
+  type = kind;
   const page = { id, type, title };
   switch (type) {
     case 'hub':
@@ -187,6 +219,7 @@ export function newPage(type, title, id) {
     case 'gallery':
       page.kicker = 'Photos';
       page.images = [];
+      if (GALLERY_PRESETS[preset]) GALLERY_PRESETS[preset].apply(page);
       break;
     case 'list':
       page.kicker = 'Cards';

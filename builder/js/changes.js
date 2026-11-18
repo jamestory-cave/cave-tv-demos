@@ -5,6 +5,8 @@
 
 import { deepEqual } from './util.js';
 import { cleanPage } from './bundle.js';
+import { describeOverrideChanges } from './overrides.js';
+import { galleryOptions, chapterNames, chapterKey, STYLES } from './gallery.js';
 
 const FIELD_LABELS = { title: 'Title', kicker: 'Small caps line', subtitle: 'Subtitle', body: 'Text', image: 'Photo', description: 'Description',
   hoursTitle: 'Hours heading', childrenTitle: 'Heading above the pages inside' };
@@ -113,14 +115,71 @@ function diffStage2(a, b, lines) {
 
 /** A gallery's frames: its slides when it has any, else its photos. */
 const framesOf = (p) => ((p.slides || []).length ? p.slides : (p.images || []).map((image) => ({ image })));
+const nOf = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`;
+const listNames = (names) => (names.length > 4 ? `${names.slice(0, 3).join(', ')} and ${names.length - 3} more` : names.join(', '));
 
+/**
+ * A gallery in words: the frames (added, removed, reordered), then what
+ * changed on frames that are on both sides ("12 captions added", "chapters
+ * added: Hole 1, Hole 2…", "2 frames now show the whole image", "a film now
+ * plays with sound"), then the settings (style, plays by itself, seconds).
+ */
 function diffGallery(a, b, lines) {
   const fa = framesOf(a), fb = framesOf(b);
-  if (deepEqual(fa, fb)) return;
-  const films = fb.filter((x) => x.film).length;
-  const what = `${fb.length - films} photo${fb.length - films === 1 ? '' : 's'}${films ? `, ${films} film${films === 1 ? '' : 's'}` : ''}`;
-  const sameSet = fa.length === fb.length && fa.every((x) => fb.some((y) => deepEqual(x, y)));
-  lines.push(sameSet ? 'Gallery: photos and films reordered' : `Gallery: now ${what}`);
+  if (!deepEqual(fa, fb)) {
+    const media = (fr) => fr.film || fr.image || '';
+    const bare = (l) => l.map(media);
+    const films = fb.filter((x) => x.film).length;
+    const what = `${fb.length - films} photo${fb.length - films === 1 ? '' : 's'}${films ? `, ${films} film${films === 1 ? '' : 's'}` : ''}`;
+    const sameSet = fa.length === fb.length && bare(fa).every((x) => bare(fb).includes(x)) && bare(fb).every((x) => bare(fa).includes(x));
+    if (!sameSet) lines.push(`Gallery: now ${what}`);
+    else if (bare(fa).join('|') !== bare(fb).join('|')) lines.push('Gallery: photos and films reordered');
+    // Frames on both sides, matched by their photo or film.
+    const pool = new Map();
+    for (const f of fa) { const k = media(f); if (!pool.has(k)) pool.set(k, []); pool.get(k).push(f); }
+    const pairs = [];
+    for (const f of fb) { const q = pool.get(media(f)); if (q && q.length) pairs.push([q.shift(), f]); }
+    const cap = { added: 0, changed: 0, removed: 0 };
+    let whole = 0, filled = 0, loud = 0, quiet = 0, posters = 0;
+    for (const [x, y] of pairs) {
+      const cx = (x.caption || '').trim(), cy = (y.caption || '').trim();
+      if (!cx && cy) cap.added++; else if (cx && !cy) cap.removed++; else if (cx !== cy) cap.changed++;
+      if ((x.fit === 'whole') !== (y.fit === 'whole')) { if (y.fit === 'whole') whole++; else filled++; }
+      if (y.film && (x.sound === true) !== (y.sound === true)) { if (y.sound === true) loud++; else quiet++; }
+      if (y.film && (x.poster || '') !== (y.poster || '')) posters++;
+    }
+    // New frames shown whole or playing with sound are said too (QA-9).
+    const paired = new Set(pairs.map(([, y]) => y));
+    for (const y of fb) { if (paired.has(y)) continue; if (y.fit === 'whole') whole++; if (y.film && y.sound === true) loud++; }
+    // Captions on frames that are new count as added too.
+    const newCaptions = fb.filter((f) => (f.caption || '').trim()).length - pairs.filter(([, y]) => (y.caption || '').trim()).length;
+    cap.added += Math.max(0, newCaptions);
+    if (cap.added) lines.push(`${nOf(cap.added, 'caption')} added`);
+    if (cap.changed) lines.push(`${nOf(cap.changed, 'caption')} changed`);
+    if (cap.removed) lines.push(`${nOf(cap.removed, 'caption')} removed`);
+    const ca = chapterNames(fa), cb = chapterNames(fb);
+    const keysA = ca.map(chapterKey), keysB = cb.map(chapterKey);
+    const addedCh = cb.filter((n) => !keysA.includes(chapterKey(n))), goneCh = ca.filter((n) => !keysB.includes(chapterKey(n)));
+    if (!ca.length && cb.length) lines.push(`Chapters added: ${listNames(cb)}`);
+    else if (ca.length && !cb.length) lines.push('Chapters removed');
+    else {
+      if (addedCh.length) lines.push(`${addedCh.length === 1 ? 'Chapter' : 'Chapters'} added: ${listNames(addedCh)}`);
+      if (goneCh.length) lines.push(`${goneCh.length === 1 ? 'Chapter' : 'Chapters'} removed: ${listNames(goneCh)}`);
+      const common = (l, keys) => l.filter((n) => keys.includes(chapterKey(n))).map(chapterKey).join('|');
+      if (!addedCh.length && !goneCh.length && common(ca, keysB) !== common(cb, keysA)) lines.push('Chapters reordered');
+      const moved = pairs.filter(([x, y]) => chapterKey(x.group) && chapterKey(y.group) && chapterKey(x.group) !== chapterKey(y.group)).length;
+      if (moved) lines.push(`${nOf(moved, 'frame')} moved to another chapter`);
+    }
+    if (whole) lines.push(`${nOf(whole, 'frame')} now ${whole === 1 ? 'shows' : 'show'} the whole image`);
+    if (filled) lines.push(`${nOf(filled, 'frame')} now ${filled === 1 ? 'fills' : 'fill'} the frame`);
+    if (loud) lines.push(`${loud === 1 ? 'A film now plays' : `${loud} films now play`} with sound`);
+    if (quiet) lines.push(`${quiet === 1 ? 'A film is' : `${quiet} films are`} now a silent loop`);
+    if (posters) lines.push(`${nOf(posters, 'poster')} changed`);
+  }
+  const oa = galleryOptions(a), ob = galleryOptions(b);
+  if (oa.style !== ob.style) lines.push(`Gallery style: ${STYLES[oa.style]} → ${STYLES[ob.style]}`);
+  if (ob.style === 'thumbnails' && oa.autoplay !== ob.autoplay) lines.push(ob.autoplay ? 'Plays by itself after 20 seconds untouched' : 'No longer plays by itself');
+  if (oa.seconds !== ob.seconds) lines.push(`Seconds per frame: ${oa.seconds} → ${ob.seconds}`);
 }
 
 function diffPage(a, b) {
@@ -128,7 +187,7 @@ function diffPage(a, b) {
   for (const [k, label] of Object.entries(FIELD_LABELS)) {
     if ((a[k] || '') !== (b[k] || '')) {
       if (k === 'image') lines.push(a.image ? 'Photo changed' : 'Photo added');
-      else if (k === 'body') lines.push(`Text changed (${(b.body || '').length} characters)`);
+      else if (k === 'body') lines.push(b.type === 'gallery' ? (b.body ? (a.body ? 'Intro changed' : 'Intro added') : 'Intro removed') : `Text changed (${(b.body || '').length} characters)`);
       else lines.push(`${label}: ${q(short(a[k]))} → ${q(short(b[k]))}`);
     }
   }
@@ -173,9 +232,11 @@ function diffPage(a, b) {
 /**
  * @param publishedBundle  the bundle on TVs now (may be null)
  * @param draft            the draft document (with hidden marks)
+ * @param opts             hotel server only: {overridesBefore, overridesAfter, names} to list
+ *                         what changed in the room-specific content (overrides.js)
  * @returns {entries: [...], summary: [string]}
  */
-export function describeChanges(publishedBundle, draft) {
+export function describeChanges(publishedBundle, draft, opts = {}) {
   const entries = [];
   const pub = indexPages(publishedBundle?.home || { id: 'home', type: 'home', title: '' });
   const cur = indexPages(draft.home);
@@ -204,6 +265,19 @@ export function describeChanges(publishedBundle, draft) {
   }
   for (const [id, { page, path }] of pub) {
     if (!cur.has(id)) entries.push({ id, path: path.join(' › ') || page.title, kind: 'removed', lines: ['Deleted'] });
+  }
+
+  // Room-specific content: lines added to the page they belong to.
+  const before = opts.overridesBefore || {}, after = 'overridesAfter' in opts ? opts.overridesAfter || {} : draft.overrides || {};
+  if (Object.keys(before).length || Object.keys(after).length) {
+    for (const { pageId, lines } of describeOverrideChanges(before, after, draft, opts.names)) {
+      const at = cur.get(pageId);
+      if (!at) continue;
+      const e = entries.find((x) => x.id === pageId);
+      const tagged = lines.map((l) => `For some rooms: ${l}`);
+      if (e) e.lines.push(...tagged);
+      else entries.push({ id: pageId, path: at.path.length ? at.path.join(' › ') : 'Home', kind: 'changed', lines: tagged });
+    }
   }
 
   const hotelLines = [];

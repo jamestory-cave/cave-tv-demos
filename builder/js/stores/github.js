@@ -129,7 +129,12 @@ export class GitHubStore {
     const text = bundleText(bundle);
     const hash8 = (await sha256Hex(text)).slice(0, 8);
     const bundlePath = `bundles/${revision}-${hash8}.json`;
-    const publishedAt = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+    // publishedAt must always move forward (PROTOTYPE.md rule 2): if the live
+    // version.json is from this same second (or the clock is behind), go one
+    // second past it.
+    const previous = Date.parse(current?.publishedAt || '');
+    const now = Math.floor(Date.now() / 1000) * 1000;
+    const publishedAt = new Date(Number.isFinite(previous) && now <= previous ? previous + 1000 : now).toISOString().replace(/\.\d{3}Z$/, 'Z');
     const version = { schema: 1, revision, bundle: bundlePath, publishedAt, note: p.note || '' };
     const entry = { revision, bundle: bundlePath, publishedAt, by: p.by || '', summary: p.summary || [] };
     if (p.note) entry.note = p.note;

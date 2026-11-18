@@ -9,12 +9,22 @@
 // Menu only restore). Select on a text block, facts or hours hides the text
 // at once.
 //
+// The better gallery (phase B, SPEC 5.3): in "Try the remote" the gallery
+// walks as the TV does: thumbnails, the chapter row, the full-screen viewer
+// (Left / Right, Down for the strip, Select for the caption or to play a film
+// with sound, Play/Pause for the slideshow, Menu back to the leaf on the same
+// frame, the words fading after 4 s), the slideshow style (one stop, Left /
+// Right hold it for 30 s) and "plays by itself" after 20 s untouched. Timers
+// run only in remote mode; edit mode stays still.
+//
 // Known differences from the TV: no slow photo zoom, no staggered entrance
 // timing beyond a simple fade, fonts are the same files but the browser's
 // text layout is not SwiftUI's, and QR codes may pick a different mask.
+// The preview never plays video: a silent loop is its poster for its turn.
 
 import { el, clear } from '../util.js';
-import { renderPage, listQRFor } from './pages.js';
+import { renderPage, listQRFor, renderGalleryViewer } from './pages.js';
+import { framesOf, galleryOptions, IDLE_BEFORE_AUTOPLAY_MS, HOLD_MS, VIEWER_FADE_MS, MARK_MS, GALLERY_WORDS as W8 } from '../gallery.js';
 
 export const W = 1920, H = 1080;
 const SLIVER = 48, GAP = 16, MIN_CLOSED = 120, MAX_CLOSED = 300, MIN_OPEN = 420, CHROME = 190;
@@ -101,6 +111,12 @@ export class TVPreview {
     this.faded = false;
     this.idleTimer = null;
     this.fadeAfterMs = 6000;
+    // The gallery's clocks (SPEC 5.2, 5.3). Tests may shorten them.
+    this.gal = { pageId: null, running: false, paused: false, held: false };
+    this.galTimers = {};
+    this.viewer = null;            // the full-screen viewer: {strip, captionHidden, slideshow, mark}
+    this.viewerFaded = false;
+    this.timing = { idleBeforeAutoplay: IDLE_BEFORE_AUTOPLAY_MS, hold: HOLD_MS, viewerFade: VIEWER_FADE_MS, mark: MARK_MS, secondsScale: 1 };
     this.build();
   }
 
@@ -130,7 +146,8 @@ export class TVPreview {
     this.stage.addEventListener('mouseleave', () => this.hoverLabel.classList.remove('on'));
     this.stage.addEventListener('keydown', (e) => {
       if (this.mode !== 'remote') return;
-      const map = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', Enter: 'enter', ' ': 'enter', Escape: 'back', Backspace: 'back' };
+      // Space is Play/Pause, as on the demo page (SPEC 6.4).
+      const map = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', Enter: 'enter', ' ': 'playpause', Escape: 'back', Backspace: 'back' };
       const k = map[e.key];
       if (!k) return;
       e.preventDefault();
@@ -143,7 +160,7 @@ export class TVPreview {
     this.fit();
   }
 
-  destroy() { this.resize.disconnect(); window.removeEventListener('resize', this.onWindowResize); clearTimeout(this.idleTimer); }
+  destroy() { this.resize.disconnect(); window.removeEventListener('resize', this.onWindowResize); clearTimeout(this.idleTimer); this.stopGalleryClocks(); clearTimeout(this.viewerFadeTimer); clearTimeout(this.markTimer); }
 
   fit() {
     const s = this.viewport.clientWidth / W;
@@ -316,8 +333,16 @@ export class TVPreview {
       return k === n.i ? (n.focus === 'strip' ? ['is-current', 'is-focused'] : ['is-current']) : ['is-closed'];
     }, (page) => page.kicker ?? this.section?.title ?? '', g.captionWidth(g.inside.open));
 
-    // Chrome. A finished page takes the whole screen: slivers hidden, path line and Back kept.
-    const fin = n.level === 2 && this.pageOnShow?.type === 'finished';
+    // A different page on show: the gallery's state starts again (frame 1, no viewer, clocks stopped).
+    const galPage = n.level === 2 && this.pageOnShow?.type === 'gallery' ? this.pageOnShow : null;
+    if ((galPage?.id || null) !== this.gal.pageId) this.resetGallery(galPage);
+    if (this.mode !== 'remote' && this.viewer) this.viewer = null;
+
+    // Chrome. A finished page takes the whole screen: slivers hidden, path line and Back kept. So does the gallery's viewer.
+    const viewer = !!(galPage && this.viewer);
+    const fin = n.level === 2 && (this.pageOnShow?.type === 'finished' || viewer);
+    this.stage.classList.toggle('viewer', viewer);
+    if (!viewer) this.stage.classList.remove('viewer-faded');
     this.stage.classList.toggle('finished', fin);
     this.stage.classList.toggle('has-qr', fin && !!this.pageOnShow?.qr);
     this.stage.classList.toggle('deep', n.level > 0);
@@ -345,6 +370,7 @@ export class TVPreview {
     // Any change of what is on show brings the text back and restarts the idle clock.
     this.setFaded(false);
     this.armIdle();
+    this.syncGalleryClocks();
   }
 
   // ---- background film: the text fades so the film shows (as on the TV) ------
@@ -459,9 +485,11 @@ export class TVPreview {
       fallbackKicker: this.section?.title || null,
     };
     if (this.listCardPage !== page.id) { this.listCardPage = page.id; this.listCard = undefined; }
-    const { node, full } = renderPage(page, { hotel: this.doc.hotel, layout, media: this.media, galleryIndex: this.galleryIndex, slideIndex: this.slideIndex, listCard: this.listCard });
+    const ctx = { hotel: this.doc.hotel, layout, media: this.media, galleryIndex: this.galleryIndex, slideIndex: this.slideIndex, listCard: this.listCard, galleryState: this.galleryStateText(page) };
+    const { node, full } = page.type === 'gallery' && this.viewer ? { node: renderGalleryViewer(page, { ...ctx, viewer: this.viewer }), full: true } : renderPage(page, ctx);
     this.pageEl = el('div.tv-page' + (full ? '.tv-full' : ''), node);
     this.leafLayer.append(this.pageEl);
+    if (page.type === 'gallery') { this.pageEl.querySelector('.tv-gallery')?.classList.toggle('running', this.gal.running); requestAnimationFrame(() => this.scrollStrips(this.galleryIndex)); }
     // A list's QR card is pinned bottom-right of the page area and stays put while the list scrolls.
     const pin = this.pageEl.querySelector('.tv-lqr');
     if (pin) { pin.classList.add('tv-lqr-pin'); this.leafLayer.append(pin); }
@@ -555,6 +583,7 @@ export class TVPreview {
   goBack() {
     const n = this.nav;
     if (this.playing) { this.stopPlaying(); return; }
+    if (this.viewer) { this.closeViewer(); return; }
     if (n.level === 0) return;
     this.slideIndex = 0;
     if (n.level === 2 && n.trail.length) {
@@ -608,12 +637,34 @@ export class TVPreview {
     }
   }
 
+  /** Shows frame i of the gallery on show: every per-frame element (photo, caption, counter, thumbnail, dot) by data-photo, the chapter it is in, the rows scrolled to it. */
   showPhoto(i) {
     this.galleryIndex = i;
-    this.pageEl.querySelectorAll('.tv-gphoto').forEach((p) => p.classList.toggle('on', Number(p.dataset.photo) === i));
-    this.pageEl.querySelectorAll('.tv-thumb').forEach((t) => t.classList.toggle('on', Number(t.dataset.photo) === i));
-    const count = this.pageEl.querySelector('[data-count]');
-    if (count) count.textContent = `${i + 1} of ${this.pageEl.querySelectorAll('.tv-gphoto').length}`;
+    const root = this.pageEl;
+    if (!root) return;
+    root.querySelectorAll('[data-photo]').forEach((p) => p.classList.toggle('on', Number(p.dataset.photo) === i));
+    root.querySelectorAll('.tv-chip').forEach((c) => c.classList.toggle('cur', i >= Number(c.dataset.chapter) && i <= Number(c.dataset.runEnd)));
+    root.querySelectorAll('.tv-vstrip .tv-thumb').forEach((t) => t.classList.toggle('is-focused', Number(t.dataset.photo) === i));
+    const count = root.querySelector('[data-count]');
+    if (count) count.textContent = `${i + 1} of ${root.querySelectorAll('.tv-gphoto').length}`;
+    this.scrollStrips(i);
+  }
+
+  /** Keeps the current thumbnail and chapter in view (the rows slide, as on the TV). */
+  scrollStrips(i) {
+    const root = this.pageEl;
+    if (!root) return;
+    const slide = (inner, item, lead) => {
+      if (!inner || !item) return;
+      const box = inner.parentNode;
+      const cs = getComputedStyle(box);
+      const visible = box.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      const x = Math.max(0, Math.min(item.offsetLeft - lead, inner.scrollWidth - visible));
+      inner.style.transform = x > 0 ? `translateX(${-x}px)` : '';
+    };
+    slide(root.querySelector('.tv-thumbs .tv-strip-in'), root.querySelector(`.tv-thumbs .tv-thumb[data-photo="${i}"]`), 2 * 252);
+    slide(root.querySelector('.tv-vstrip .tv-strip-in'), root.querySelector(`.tv-vstrip .tv-thumb[data-photo="${i}"]`), 4 * 252);
+    slide(root.querySelector('.tv-gchips .tv-strip-in'), root.querySelector('.tv-chip.is-focused') || root.querySelector('.tv-chip.cur'), 160);
   }
 
   /** On a list page, shows the QR for card `i` (its own, else the page's); -1 for the page's. */
@@ -648,6 +699,8 @@ export class TVPreview {
     this.player.classList.remove('on');
     this.applyFocus();
     this.armIdle();
+    if (this.viewer) this.wakeViewer();
+    this.syncGalleryClocks();
   }
 
   /** Position of a node inside the page area, in TV pixels, independent of nesting and the stage scale. */
@@ -691,7 +744,21 @@ export class TVPreview {
 
   key(k) {
     const n = this.nav;
-    if (this.playing) { if (k === 'back' || k === 'enter') this.stopPlaying(); return; }
+    if (this.playing) { if (k === 'back' || k === 'enter' || k === 'playpause') this.stopPlaying(); return; }
+    // The viewer's words have faded: Select and Menu only bring them back; a move also moves.
+    // The viewer, as the TV: Select on a film with sound plays it even while the words are faded;
+    // otherwise, faded, Select only brings the words back. The first Menu stops a running slideshow
+    // and brings the words back; the next Menu leaves. Play/Pause toggles at once (and wakes).
+    if (this.viewer && n.focus !== 'back') {
+      const vp = this.galleryPage();
+      const fr = vp ? framesOf(vp)[this.galleryIndex] : null;
+      if (k === 'enter' && this.viewerFaded && fr?.film && fr.sound === true) { this.wakeViewer(); this.playFrame(vp, framesOf(vp), this.galleryIndex); return; }
+      if ((k === 'enter' && this.viewerFaded) || (k === 'back' && (this.viewerFaded || this.viewer.slideshow))) {
+        if (this.viewer.slideshow) { this.viewer.slideshow = false; clearTimeout(this.galTimers.turn); delete this.galTimers.turn; this.hideMark(); }
+        this.wakeViewer();
+        return;
+      }
+    }
     if (this.faded) {
       // Any press brings the text back. A move also acts; Select and Menu only restore.
       this.setFaded(false);
@@ -726,7 +793,9 @@ export class TVPreview {
       }
       return;
     }
-    // Level 2: Back or a stop inside the page.
+    // Level 2: the gallery walks as the TV does (SPEC 5.3).
+    if (this.pageOnShow?.type === 'gallery' && this.galleryKey(k)) return;
+    // Back or a stop inside the page.
     if (n.focus === 'back') {
       if (k === 'down') this.focusEntry(n.stop || undefined);
       else if (k === 'left' || k === 'enter') this.goBack();
@@ -741,9 +810,10 @@ export class TVPreview {
       if (k === 'right') { if (this.slideIndex < count - 1) this.showSlide(this.slideIndex + 1); return; }
       if (k === 'left') { if (this.slideIndex > 0) this.showSlide(this.slideIndex - 1); else { n.focus = 'back'; this.applyFocus(); } return; }
       if (k === 'up') { n.focus = 'back'; this.applyFocus(); return; }
-      if (k === 'enter' && cur.dataset.film) this.play(cur.dataset.film);
+      if ((k === 'enter' || k === 'playpause') && cur.dataset.film) this.play(cur.dataset.film);
       return;
     }
+    if (k === 'playpause') { if (cur.dataset.film) this.play(cur.dataset.film); return; }
     if (k === 'enter') {
       if (cur.dataset.child) this.openChild(cur.dataset.child);
       else if (cur.dataset.film) this.play(cur.dataset.film);
@@ -752,6 +822,285 @@ export class TVPreview {
     const next = this.neighbour(cur, stops, k);
     if (next) { n.stop = next.dataset.stop; this.applyFocus(); return; }
     if (k === 'up' || k === 'left') { n.focus = 'back'; this.applyFocus(); }
+  }
+
+  // ---- the gallery (SPEC 5.3) ---------------------------------------------
+
+  /** A new page on show: frame 1, no viewer, clocks stopped; they start again in syncGalleryClocks. */
+  resetGallery(page) {
+    this.stopGalleryClocks();
+    clearTimeout(this.viewerFadeTimer);
+    clearTimeout(this.markTimer);
+    this.viewer = null;
+    this.viewerFaded = false;
+    this.gal = { pageId: page?.id || null, running: false, paused: false, held: false };
+  }
+
+  stopGalleryClocks() {
+    for (const t of Object.values(this.galTimers || {})) clearTimeout(t);
+    this.galTimers = {};
+  }
+
+  galleryPage() { return this.nav.level === 2 && this.pageOnShow?.type === 'gallery' ? this.pageOnShow : null; }
+
+  /** What the slideshow style says under its dots. */
+  galleryStateText(page) {
+    if (page.type !== 'gallery') return '';
+    const o = galleryOptions(page);
+    if (this.mode !== 'remote') return W8.turnsEvery(o.seconds);
+    if (this.gal.paused) return W8.paused;
+    if (this.gal.held) return W8.pausedFor(Math.round(this.timing.hold / 1000));
+    return W8.turnsEvery(o.seconds);
+  }
+
+  /**
+   * Starts the clocks the page needs, once: Thumbnails with "plays by itself"
+   * waits 20 s for a press; the Slideshow style turns at once; the viewer
+   * turns while its slideshow is on. Remote mode only.
+   */
+  syncGalleryClocks() {
+    const page = this.galleryPage();
+    if (!page || this.mode !== 'remote' || this.playing) { this.stopGalleryClocks(); return; }
+    const o = galleryOptions(page);
+    const t = this.galTimers;
+    if (this.viewer) {
+      clearTimeout(t.idle); delete t.idle;
+      if (this.viewer.slideshow && !t.turn) this.scheduleTurn(o);
+      if (!this.viewer.slideshow && t.turn) { clearTimeout(t.turn); delete t.turn; }
+      return;
+    }
+    if (o.style === 'slideshow') {
+      if (!this.gal.paused && !this.gal.held && !t.turn) { this.gal.running = true; this.markRunning(); this.scheduleTurn(o); }
+    } else if (o.autoplay && !this.gal.running && !t.idle) {
+      t.idle = setTimeout(() => { delete t.idle; this.gal.running = true; this.scheduleTurn(o); }, this.timing.idleBeforeAutoplay);
+    }
+  }
+
+  scheduleTurn(o) {
+    clearTimeout(this.galTimers.turn);
+    this.galTimers.turn = setTimeout(() => { delete this.galTimers.turn; this.turn(); }, o.seconds * 1000 * this.timing.secondsScale);
+  }
+
+  /** The next frame by itself (wrapping to the first at the end), the focus following it on the thumbnails. */
+  turn() {
+    const page = this.galleryPage();
+    if (!page || this.mode !== 'remote') return;
+    const count = framesOf(page).length;
+    if (!count) return;
+    const next = (this.galleryIndex + 1) % count;
+    if (!this.viewer && this.nav.focus === 'page' && /^photo-\d+$/.test(this.nav.stop || '')) { this.nav.stop = `photo-${next}`; this.applyFocus(); }
+    this.showPhoto(next);
+    this.markRunning();
+    if (this.viewer ? this.viewer.slideshow : this.gal.running) this.scheduleTurn(galleryOptions(page));
+  }
+
+  /** Restarts the slideshow style's bar for this frame. */
+  markRunning() {
+    const g = this.pageEl?.querySelector('.tv-gallery');
+    if (!g) return;
+    g.classList.remove('running');
+    void g.offsetWidth;
+    g.classList.toggle('running', this.gal.running);
+    const nx = g.querySelector('.tv-gnext');
+    const page = this.galleryPage();
+    if (nx && page) nx.textContent = this.galleryStateText(page);
+  }
+
+  /** A press in the leaf: Thumbnails stop turning and wait 20 s again. */
+  galleryTouched() {
+    const page = this.galleryPage();
+    if (!page || this.viewer) return;
+    const o = galleryOptions(page);
+    if (o.style !== 'thumbnails') return;
+    this.gal.running = false;
+    clearTimeout(this.galTimers.turn); delete this.galTimers.turn;
+    clearTimeout(this.galTimers.idle); delete this.galTimers.idle;
+    this.syncGalleryClocks();
+  }
+
+  /** Slideshow style: Left / Right step and hold the slideshow for 30 s. */
+  holdSlideshow() {
+    const page = this.galleryPage();
+    const t = this.galTimers;
+    clearTimeout(t.turn); delete t.turn;
+    clearTimeout(t.hold);
+    this.gal.running = false;
+    this.gal.held = true;
+    this.markRunning();
+    t.hold = setTimeout(() => { delete t.hold; this.gal.held = false; if (page) this.syncGalleryClocks(); }, this.timing.hold);
+  }
+
+  focusThumb(i) {
+    this.nav.focus = 'page';
+    this.nav.stop = `photo-${i}`;
+    this.applyFocus();
+    this.scrollStrips(i);
+  }
+
+  focusBack() { this.nav.focus = 'back'; this.applyFocus(); if (this.viewer) this.wakeViewer(); }
+
+  /** The first tile of the pages inside, if there are any. */
+  firstTile() { return this.pageEl?.querySelector('.tv-gtiles [data-stop]') || null; }
+
+  openViewer(i, { slideshow = false } = {}) {
+    this.stopGalleryClocks();
+    this.gal.running = false;
+    this.galleryIndex = i;
+    this.viewer = { strip: false, captionHidden: false, slideshow, mark: slideshow ? W8.slideshowOn : '' };
+    this.nav.focus = 'page';
+    this.render(0);
+    this.wakeViewer();
+    if (slideshow) this.showMark(W8.slideshowOn);
+  }
+
+  closeViewer() {
+    const page = this.galleryPage();
+    clearTimeout(this.viewerFadeTimer);
+    clearTimeout(this.markTimer);
+    this.viewer = null;
+    this.viewerFaded = false;
+    this.stopGalleryClocks();
+    this.gal.running = false;
+    this.nav.focus = 'page';
+    this.nav.stop = page && galleryOptions(page).style === 'slideshow' ? 'gframe' : `photo-${this.galleryIndex}`;
+    this.render(0);
+  }
+
+  /** The viewer's words come back, and fade again after 4 s with no press (not while the strip is open). */
+  wakeViewer() {
+    this.viewerFaded = false;
+    this.stage.classList.remove('viewer-faded');
+    clearTimeout(this.viewerFadeTimer);
+    // The words stay up while Back has focus, and while the strip is open.
+    if (!this.viewer || this.viewer.strip || this.mode !== 'remote' || this.nav.focus === 'back') return;
+    this.viewerFadeTimer = setTimeout(() => { if (this.viewer && !this.viewer.strip) { this.viewerFaded = true; this.stage.classList.add('viewer-faded'); } }, this.timing.viewerFade);
+  }
+
+  hideMark() {
+    clearTimeout(this.markTimer);
+    if (this.viewer) this.viewer.mark = '';
+    this.pageEl?.querySelector('.tv-vmark')?.remove();
+  }
+
+  showMark(text) {
+    if (!this.viewer) return;
+    if (!text) { this.hideMark(); return; }   // turning the slideshow off shows no words
+    this.viewer.mark = text;
+    this.pageEl?.querySelector('.tv-vmark')?.remove();
+    this.pageEl?.querySelector('.tv-gviewer')?.append(el('div.tv-vmark', text));
+    clearTimeout(this.markTimer);
+    this.markTimer = setTimeout(() => { if (this.viewer) this.viewer.mark = ''; this.pageEl?.querySelector('.tv-vmark')?.remove(); }, this.timing.mark);
+  }
+
+  /** Redraws the viewer after a change of its parts (strip, caption). */
+  redrawViewer() { this.render(0); }
+
+  playFrame(page, frames, i) {
+    const fr = frames[i];
+    this.stopGalleryClocks();
+    this.play(fr.caption || `${page.title || 'Gallery'}: film ${i + 1}`);
+  }
+
+  /** The gallery's remote (SPEC 5.3). Returns true when the press was handled. */
+  galleryKey(k) {
+    const page = this.pageOnShow;
+    const frames = framesOf(page);
+    const count = frames.length;
+    const n = this.nav;
+    const o = galleryOptions(page);
+    const idx = Math.min(this.galleryIndex, Math.max(0, count - 1));
+    if (this.viewer) return this.viewerKey(k, page, frames, idx);
+    this.galleryTouched();
+    if (n.focus === 'back') return false;
+    const s = n.stop || '';
+    const tile = this.firstTile();
+    if (s.startsWith('child-') && k === 'up') {
+      if (o.style === 'slideshow' && count) { n.stop = 'gframe'; this.applyFocus(); return true; }
+      if (count) { this.focusThumb(idx); return true; }
+      return false;
+    }
+    if (o.style === 'slideshow') {
+      if (s !== 'gframe') return false;
+      if (k === 'left') { if (idx > 0) { this.showPhoto(idx - 1); this.holdSlideshow(); } else this.focusBack(); return true; }
+      if (k === 'right') { if (idx < count - 1) { this.showPhoto(idx + 1); this.holdSlideshow(); } return true; }
+      if (k === 'up') { this.focusBack(); return true; }
+      if (k === 'down') { if (tile) { n.stop = tile.dataset.stop; this.applyFocus(); } return true; }
+      if (k === 'enter') { this.openViewer(idx); return true; }
+      if (k === 'playpause') {
+        this.gal.paused = !this.gal.paused;
+        clearTimeout(this.galTimers.hold); delete this.galTimers.hold; this.gal.held = false;
+        if (this.gal.paused) { clearTimeout(this.galTimers.turn); delete this.galTimers.turn; this.gal.running = false; this.markRunning(); }
+        else this.syncGalleryClocks();
+        return true;
+      }
+      return true;
+    }
+    const m = /^photo-(\d+)$/.exec(s);
+    if (m) {
+      const i = Number(m[1]);
+      if (k === 'left') { if (i > 0) this.focusThumb(i - 1); else this.focusBack(); return true; }
+      if (k === 'right') { if (i < count - 1) this.focusThumb(i + 1); return true; }
+      if (k === 'up') {
+        const chips = [...this.pageEl.querySelectorAll('.tv-chip')];
+        if (!chips.length) { this.focusBack(); return true; }
+        const chip = chips.find((c) => i >= Number(c.dataset.chapter) && i <= Number(c.dataset.runEnd)) || [...chips].reverse().find((c) => Number(c.dataset.chapter) <= i) || chips[0];
+        n.stop = chip.dataset.stop; this.applyFocus(); this.scrollStrips(i);
+        return true;
+      }
+      if (k === 'down') { if (tile) { n.stop = tile.dataset.stop; this.applyFocus(); } return true; }
+      if (k === 'enter') { if (frames[i]?.film && frames[i].sound === true) this.playFrame(page, frames, i); else this.openViewer(i); return true; }
+      if (k === 'playpause') { this.openViewer(i, { slideshow: true }); return true; }
+      return true;
+    }
+    if (/^chap-\d+$/.test(s)) {
+      const chips = [...this.pageEl.querySelectorAll('.tv-chip')];
+      const at = chips.findIndex((c) => c.dataset.stop === s);
+      const go = (c) => { n.stop = c.dataset.stop; this.showPhoto(Number(c.dataset.chapter)); this.applyFocus(); this.scrollStrips(this.galleryIndex); };
+      if (k === 'left') { if (at > 0) go(chips[at - 1]); else this.focusBack(); return true; }
+      if (k === 'right') { if (at < chips.length - 1) go(chips[at + 1]); return true; }
+      if (k === 'up') { this.focusBack(); return true; }
+      if (k === 'down' || k === 'enter') { this.focusThumb(Number(chips[at].dataset.chapter)); return true; }
+      if (k === 'playpause') { this.openViewer(idx, { slideshow: true }); return true; }
+      return true;
+    }
+    return false;
+  }
+
+  /** The full-screen viewer's remote (SPEC 5.3 "The full-screen viewer"). */
+  viewerKey(k, page, frames, idx) {
+    const v = this.viewer;
+    const n = this.nav;
+    const count = frames.length;
+    this.wakeViewer();
+    if (k !== 'playpause' && v.slideshow) { v.slideshow = false; clearTimeout(this.galTimers.turn); delete this.galTimers.turn; }
+    if (n.focus === 'back') {
+      if (k === 'right' || k === 'down') { n.focus = 'page'; this.applyFocus(); }
+      else if (k === 'enter' || k === 'left') this.closeViewer();
+      return true;
+    }
+    if (k === 'playpause') {
+      v.slideshow = !v.slideshow;
+      this.showMark(v.slideshow ? W8.slideshowOn : W8.slideshowOff);
+      this.syncGalleryClocks();
+      return true;
+    }
+    if (v.strip) {
+      if (k === 'left') { if (idx > 0) this.showPhoto(idx - 1); }
+      else if (k === 'right') { if (idx < count - 1) this.showPhoto(idx + 1); }
+      else if (k === 'up' || k === 'enter') { v.strip = false; this.redrawViewer(); this.wakeViewer(); }
+      return true;
+    }
+    if (k === 'left') { if (idx > 0) this.showPhoto(idx - 1); else this.focusBack(); return true; }
+    if (k === 'right') { if (idx < count - 1) this.showPhoto(idx + 1); return true; }
+    if (k === 'down') { v.strip = true; this.redrawViewer(); return true; }
+    if (k === 'up') { this.focusBack(); return true; }
+    if (k === 'enter') {
+      if (frames[idx]?.film && frames[idx].sound === true) { this.playFrame(page, frames, idx); return true; }
+      v.captionHidden = !v.captionHidden;
+      this.pageEl?.querySelector('.tv-gviewer')?.classList.toggle('nocap', v.captionHidden);
+      return true;
+    }
+    return true;
   }
 
   /** The nearest stop in a direction, the way tvOS's focus engine would pick it. */

@@ -2,6 +2,7 @@
 // A blocker holds that page back from the bundle; a warning does not.
 
 import { ALLOWS } from './bundle.js';
+import { framesOf, hasChapters, chaptersSplit, chapterKey, chapterRuns } from './gallery.js';
 
 export const LIMITS = {
   title: 28, kicker: 30, subtitle: 60, body: 500, fact: 70, factsMax: 6,
@@ -9,16 +10,30 @@ export const LIMITS = {
   dishName: 40, dishDescription: 120, dishPrice: 12, sectionTitle: 40, sectionNote: 60,
   cardTitle: 40, cardSubtitle: 60, cardBody: 160, cardMeta: 20,
   hotelField: 40, tagline: 60,
-  sectionsMax: 8, itemsMax: 8, galleryMax: 12,
+  sectionsMax: 8, itemsMax: 8, galleryMax: 60,
   // Stage 2: photo frames, films, finished pages.
   caption: 60, photosMax: 6, filmTitle: 40, filmsMax: 4, description: 160, slidesMax: 10,
   backgroundFilmBytes: 15 * 1024 * 1024,   // a warning; 60 MB stays the hard limit for every film
   // Rhys's requests, 9 Nov 2026 (docs/builder/2026-11-rhys-requests.md).
   hoursTitle: 24, childrenTitle: 40,
+  // The better gallery (phase B, GALLERY-CONTRACT.md): caption per frame,
+  // chapter name, intro. galleryMax was 12; a course told hole by hole needs
+  // about 54 frames (SPEC 5.2), so 60.
+  frameCaption: 80, chapter: 24, galleryIntro: 160,
   // A full-screen photo needs 1920 on its long edge and 1080 on its short
   // edge (portrait photos are fine: the TV crops them). Cards need 800.
   imageMinLong: 1920, imageMinShort: 1080, cardImageMinLong: 800,
 };
+
+/**
+ * The example words a new page starts with (model.js newPage). Left in place they would reach
+ * guests (build 7 QA-2: "A short line above the title" did), so each is a warning naming the
+ * field, and the Publish screen lists the pages still carrying any (gallery QA-5).
+ */
+export const EXAMPLE_TEXT = new Set(['New section', 'One line about this section', 'A short line above the title', 'One line that sums it up',
+  'Two or three sentences. Short, confident, slightly theatrical.', 'One thing worth knowing', 'Another', 'Sample menu', 'One line about the menu.',
+  'One line about this list', 'First card', 'When or how far', 'One line', 'A sentence or two.', 'Something useful to know', 'A dish', 'What is in it']);
+const isExample = (v) => typeof v === 'string' && EXAMPLE_TEXT.has(v.trim());
 
 /** Why a photo is too small for its use, or null if it is fine or unknown. */
 export function photoProblem(size, use = 'full') {
@@ -29,14 +44,68 @@ export function photoProblem(size, use = 'full') {
   return null;
 }
 
-/** True for a QR web address the TV can draw and a phone can open. */
-export function validQR(url) {
-  if (!url) return false;
-  if (/^WIFI:/i.test(url)) return true;
-  try {
-    const u = new URL(url);
-    return (u.protocol === 'https:' || u.protocol === 'http:') && u.hostname.includes('.');
-  } catch { return false; }
+// ---- Links: ONE rule set, shared with the hotel server ------------------------
+// cave_overrides.py has the same rules, step for step, with the same words,
+// and both sides are run against the same cases (selftest-data/link-rules.json),
+// so a link the Builder calls fine is never refused by the server (QA-2, QA-3,
+// QA-11, QA-12). The allowed characters are spelled out rather than left to
+// each language's idea of "white space":
+//   - only plain spaces, tabs and line breaks are trimmed from the ends;
+//   - a link is printable ASCII only (! to ~): no spaces, no invisible
+//     characters, no accented letters (a site gives them %-encoded);
+//   - http or https (any case), a host with at least one dot, an optional
+//     port, then anything starting /, ? or #.
+// A Wi-Fi code (WIFI:…) is allowed where the master's rule applies.
+export const LINK_RE = /^(https?):\/\/([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)(:\d{1,5})?([/?#][!-~]*)?$/i;
+
+/** Trims plain spaces, tabs and line breaks from the ends (never other characters: they make the link wrong). */
+export const trimLink = (url) => String(url ?? '').replace(/^[ \t\n\r\f\v]+|[ \t\n\r\f\v]+$/g, '');
+
+const INVISIBLE = (c) => c <= 0x20 || (c >= 0x7f && c <= 0xa0) || c === 0xad || (c >= 0x200b && c <= 0x200f) || c === 0x2028 || c === 0x2029 || c === 0x2060 || c === 0xfeff;
+const hex4 = (c) => 'U+' + c.toString(16).toUpperCase().padStart(4, '0');
+
+/**
+ * What is wrong with a link, in words, or null when it is fine. https: true for a link that
+ * differs by room (Overrides: https only, no Wi-Fi codes); false for the master's rule.
+ */
+export function linkProblem(url, { https = false } = {}) {
+  const s = trimLink(url);
+  if (!s) return 'there is no web address';
+  if (!https && /^WIFI:/i.test(s)) return null;
+  for (const ch of s) {
+    const c = ch.codePointAt(0);
+    if (c >= 0x21 && c <= 0x7e) continue;
+    if (c === 0x20) return 'it has a space in it';
+    if (INVISIBLE(c)) return `it has an invisible character in it (${hex4(c)})`;
+    return `it has "${ch}" in it; a web address can only use plain letters, digits and signs such as / ? = &`;
+  }
+  const sm = /^([A-Za-z][A-Za-z0-9+.-]*):\/\//.exec(s);
+  if (!sm) return https ? 'it should start https://' : 'it should start https:// (or be a Wi-Fi code)';
+  const scheme = sm[1].toLowerCase();
+  if (scheme !== 'http' && scheme !== 'https') return `it starts "${sm[1]}:" instead of https://`;
+  if (https && scheme === 'http') return 'it starts http://; a link that differs by room must start https://';
+  const rest = s.slice(sm[0].length);
+  const authority = rest.split(/[/?#]/)[0];
+  if (authority.includes('@')) return 'it has an "@" before the site\'s address, which phones treat as a sign-in';
+  const hp = /^([^:]*)(?::(.*))?$/.exec(authority);
+  const host = hp[1];
+  if (!host) return 'there is no site address after "://"';
+  if (hp[2] !== undefined && !/^\d{1,5}$/.test(hp[2])) return 'the number after ":" in the site\'s address is not a port number';
+  if (!/^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(host)) return `"${host.slice(0, 40)}" is not a full site address (it needs a dot, as in example.com)`;
+  return null;
+}
+
+/** True for a QR code the TV can draw and a phone can open: a Wi-Fi code (WIFI:…) or an http(s) link. The master's rule, and a page version's. */
+export function validQR(url) { return linkProblem(url) === null; }
+
+/** True for a link that differs by room (Overrides): the same rule, https only. */
+export function validHTTPS(url) { return linkProblem(url, { https: true }) === null; }
+
+/** A link as it is published: trimmed, scheme and host in small letters (the path is kept as typed). */
+export function normaliseLink(url) {
+  const s = trimLink(url);
+  const m = LINK_RE.exec(s);
+  return m ? `${m[1].toLowerCase()}://${m[2].toLowerCase()}${m[3] || ''}${m[4] || ''}` : s;
 }
 
 /** Why a photo will not do for a frame with the given fit, or null. */
@@ -86,15 +155,27 @@ export function validatePage(page, ctx = {}) {
   text('title', page.title, LIMITS.title, 'Title');
   // Stage-2 fields on a page type that cannot show them (hand-edited drafts): left out of the bundle, said here.
   const LABEL = { photos: 'photo frames', films: 'films', backgroundFilm: 'a background film', slides: 'slides', description: 'a description',
-    hoursTitle: 'an hours heading', childrenTitle: 'a heading above its pages' };
+    hoursTitle: 'an hours heading', childrenTitle: 'a heading above its pages', gallery: 'gallery settings' };
   for (const key of Object.keys(ALLOWS)) {
     const has = Array.isArray(page[key]) ? page[key].length > 0 : !!page[key];
     if (has && !ALLOWS[key].includes(page.type)) warn(key, `This page carries ${LABEL[key]}, which a ${page.type} page cannot show; they are left out when publishing`);
   }
   if (page.type === 'finished') return validateFinished(page, { block, warn, text, photo, imageKnown, imageSize, filmInfo, ctx, blockers, warnings });
+  // Example words still in place (a warning: the page still publishes).
+  const example = (field, v, what) => { if (isExample(v)) warn(field, `${what} is still the example text "${v.trim()}"; replace it or clear it`); };
+  example('kicker', page.kicker, 'Small caps line');
+  example('subtitle', page.subtitle, 'Subtitle');
+  example('body', page.body, page.type === 'gallery' ? 'Intro' : 'Text');
+  (page.facts || []).forEach((t, i) => example(`facts.${i}`, t, `Fact ${i + 1}`));
+  (page.items || []).forEach((it, i) => { example(`items.${i}.title`, it.title, `Card ${i + 1} title`); example(`items.${i}.subtitle`, it.subtitle, `Card ${i + 1} line`); example(`items.${i}.body`, it.body, `Card ${i + 1} text`); example(`items.${i}.meta`, it.meta, `Card ${i + 1} date or distance`); });
+  (page.sections || []).forEach((sec, si) => (sec.items || []).forEach((d, di) => { if (!d.hidden) { example(`sections.${si}.items.${di}.name`, d.name, 'A dish name'); example(`sections.${si}.items.${di}.description`, d.description, `Description of ${d.name || 'a dish'}`); } }));
   text('kicker', page.kicker, LIMITS.kicker, 'Small caps line');
   text('subtitle', page.subtitle, LIMITS.subtitle, 'Subtitle');
-  text('body', page.body, LIMITS.body, 'Text');
+  // A gallery's intro is drawn from app build 8; its limit is 160 (other pages keep 500). A longer
+  // intro written before (older apps never showed it) holds the page back, said plainly with the count.
+  if (page.type === 'gallery' && over(page.body, LIMITS.galleryIntro)) block('body', `The intro is ${page.body.length} characters; a gallery's intro can be ${LIMITS.galleryIntro} (the TV shows it under the title). Shorten it under "This gallery" to publish ${page.title ? `"${page.title}"` : 'this page'}`);
+  else if (page.type === 'gallery') text('body', page.body, LIMITS.galleryIntro, 'Intro');
+  else text('body', page.body, LIMITS.body, 'Text');
 
   if (ctx.isStrip && page.type !== 'home' && !page.image) block('image', 'This strip has no photo');
   else if (!ctx.isStrip && page.type !== 'home' && !page.image) warn('image', 'No photo: the tile will be plain');
@@ -113,7 +194,7 @@ export function validatePage(page, ctx = {}) {
 
   if (page.qr) {
     text('qr.label', page.qr.label, LIMITS.qrLabel, 'QR line');
-    if (!validQR(page.qr.url)) block('qr.url', 'The QR web address is not valid (it should start with https://)');
+    if (!validQR(page.qr.url)) block('qr.url', `The QR web address is not valid: ${linkProblem(page.qr.url)}`);
     if (!page.qr.label) warn('qr.label', 'The QR link has no line saying what it does');
   }
 
@@ -142,15 +223,44 @@ export function validatePage(page, ctx = {}) {
     // Photos and films (gallery slides). Fields stay under `images` so the editor's "Photos and films" part shows them.
     frames.forEach((fr, i) => {
       const f = `images.${i}`;
+      const name = fr.film ? `Gallery film ${i + 1}` : `Gallery photo ${i + 1}`;
       if (fr.film) {
-        filmChecks(fr, f, `Gallery film ${i + 1}`, { block, warn, text: null, imageKnown, imageSize, filmInfo });
+        filmChecks(fr, f, name, { block, warn, text: null, imageKnown, imageSize, filmInfo });
         const info = imageKnown(fr.film) ? filmInfo(fr.film) : null;
-        if (info && info.audio === true && !info.silent) block(f, `Gallery film ${i + 1} "${info.name}" has a sound track. Films in a gallery loop silently: use a silent export, or mark the film as silent in Media`);
-        if (info && info.audio === null && !info.silent) block(f, `The Builder cannot tell whether "${info.name}" has sound. Mark it as silent in Media to use it in a gallery`);
-        if (info && info.bytes > LIMITS.backgroundFilmBytes) warn(f, `Gallery film ${i + 1} is ${Math.round(info.bytes / 1048576)} MB. Loops should be under 15 MB so every TV downloads them quickly`);
-      } else if (fr.image) photo(f, fr.image, 'full', `Gallery photo ${i + 1}`);
-      else block(f, `Gallery frame ${i + 1} has no photo or film`);
+        if (fr.sound === true) {
+          // Plays with sound: Select plays it full screen, so a sound track is expected.
+          if (info && info.audio === false) warn(`${f}.sound`, `${name} "${info.name}" is set to play with sound but has no sound track; it will play silently. Choose "Silent loop" if it is a loop`);
+        } else {
+          if (info && info.audio === true && !info.silent) block(`${f}.sound`, `${name} "${info.name}" has a sound track. A silent loop must have none: choose "Plays with sound", use a silent export, or mark the film as silent in Media`);
+          if (info && info.audio === null && !info.silent) block(`${f}.sound`, `The Builder cannot tell whether "${info.name}" has sound. Choose "Plays with sound", or mark it as silent in Media to use it as a silent loop`);
+          if (info && info.bytes > LIMITS.backgroundFilmBytes) warn(f, `${name} is ${Math.round(info.bytes / 1048576)} MB. Loops should be under 15 MB so every TV downloads them quickly`);
+        }
+      } else if (fr.image) {
+        if (fr.fit === 'whole') {
+          if (!imageKnown(fr.image)) block(f, `${name}: photo missing. It is not in Media any more; choose another`);
+          else { const why = frameProblem(imageSize(fr.image), 'whole'); if (why) block(f, `${name} is too small (${why})`); }
+        } else photo(f, fr.image, 'full', name);
+      } else block(f, `Gallery frame ${i + 1} has no photo or film`);
+      text(`${f}.caption`, fr.caption, LIMITS.frameCaption, `Caption on frame ${i + 1}`);
     });
+    // Chapter names: one check per chapter, on its first frame, not one per frame (QA-10).
+    const chapterSeen = new Set();
+    frames.forEach((fr, i) => {
+      const k = chapterKey(fr.group);
+      if (!k || chapterSeen.has(k)) return;
+      chapterSeen.add(k);
+      text(`images.${i}.group`, fr.group, LIMITS.chapter, `Chapter name "${String(fr.group).trim().slice(0, 30)}"`);
+    });
+    if (hasChapters(frames)) {
+      const loose = frames.map((fr, i) => (chapterKey(fr.group) ? null : i + 1)).filter(Boolean);
+      if (loose.length) warn(`images.${loose[0] - 1}.group`, `${loose.length === 1 ? `Frame ${loose[0]} has` : `Frames ${loose.slice(0, 6).join(', ')}${loose.length > 6 ? '…' : ''} have`} no chapter; on the TV ${loose.length === 1 ? 'it shows' : 'they show'} without a chapter name`);
+      if (chaptersSplit(frames)) {
+        const seen = new Set(), split = [];
+        const first = new Map();
+        for (const r of chapterRuns(frames)) { if (!first.has(r.key)) first.set(r.key, r.name); else if (r.key && !split.includes(first.get(r.key))) split.push(first.get(r.key)); seen.add(r.key); }
+        warn('images', `The frames of ${split.map((n) => `"${n}"`).join(', ')} are not together; the TV would show ${split.length === 1 ? 'it' : 'each'} as two chapters. Choose the chapter again on one of its frames and the Builder puts them together`);
+      }
+    }
   } else (page.images || []).forEach((src, i) => photo(`images.${i}`, src, 'full', `Gallery photo ${i + 1}`));
   if (frames && !frames.length) warn('images', 'This gallery has no photos or films yet');
   if (frames && frames.length > LIMITS.galleryMax) block('images', `${frames.length} photos and films; the limit is ${LIMITS.galleryMax} a gallery`);
@@ -166,7 +276,7 @@ export function validatePage(page, ctx = {}) {
     else warn(`${f}.image`, `Card "${it.title || i + 1}" has no photo`);
     if (it.qr && (it.qr.label || it.qr.url)) {   // both emptied: left out when publishing, nothing to check
       text(`${f}.qr.label`, it.qr.label, LIMITS.qrLabel, `QR line on card "${it.title || i + 1}"`);
-      if (!validQR(it.qr.url)) block(`${f}.qr.url`, `The QR web address on card "${it.title || i + 1}" is not valid (it should start with https://)`);
+      if (!validQR(it.qr.url)) block(`${f}.qr.url`, `The QR web address on card "${it.title || i + 1}" is not valid: ${linkProblem(it.qr.url)}`);
       if (!it.qr.label) warn(`${f}.qr.label`, `The QR code on card "${it.title || i + 1}" has no line saying what it does`);
     }
   });
@@ -250,7 +360,7 @@ function validateFinished(page, { block, warn, text, imageKnown, imageSize, film
   });
   if (page.qr) {
     text('qr.label', page.qr.label, LIMITS.qrLabel, 'QR line');
-    if (!validQR(page.qr.url)) block('qr.url', 'The QR web address is not valid (it should start with https://)');
+    if (!validQR(page.qr.url)) block('qr.url', `The QR web address is not valid: ${linkProblem(page.qr.url)}`);
   }
   warn('slides', 'The Builder checks size, shape and file type. It cannot read the artwork: check the margins and the top band by eye with the safe-area overlay on');
   return { blockers, warnings };
@@ -273,10 +383,7 @@ export function hasStop(page) {
 }
 
 /** A gallery's frames: its slides (photos and films) when it has any, else its photos. */
-export function galleryFrames(page) {
-  if ((page.slides || []).length) return page.slides;
-  return (page.images || []).map((image) => ({ image }));
-}
+export const galleryFrames = framesOf;
 
 export function validateHotel(hotel) {
   const blockers = [];

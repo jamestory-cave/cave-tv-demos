@@ -1,5 +1,6 @@
 // On-screen Siri Remote for touch screens, after docs/design/demos-round-3/player.html.
-// Tap or swipe the pad, tap the centre to select, Menu goes back.
+// Tap or swipe the pad, tap the centre to select, Menu goes back, Play/Pause
+// starts and stops a gallery's slideshow (and plays a film).
 
 import { el } from '../util.js';
 
@@ -12,15 +13,15 @@ const S = (tag, attrs = {}, ...kids) => {
 };
 
 /**
- * @param send (key) => void with key in left|right|up|down|enter|back
+ * @param send (key) => void with key in left|right|up|down|enter|back|playpause
  * @param wide  true puts Menu and Select beside the pad (short and wide, for
  *              narrow screens where the pad sits under the TV)
  */
 export function remotePad(send, { wide = false } = {}) {
   const wedge = 'M75 32 A54 54 0 0 1 116 62 L96 76 A22 22 0 0 0 75 64 Z';
   const g = wide
-    ? { vb: '0 0 300 172', rect: [8, 8, 284, 156], menu: [195, 86], select: [250, 86], labelY: 114, hint: [222, 150] }
-    : { vb: '0 0 150 250', rect: [8, 8, 134, 234], menu: [48, 172], select: [102, 172], labelY: 200, hint: [75, 228] };
+    ? { vb: '0 0 300 172', rect: [8, 8, 284, 156], menu: [182, 86], play: [226, 86], select: [270, 86], labelY: 114, hint: [222, 150] }
+    : { vb: '0 0 150 250', rect: [8, 8, 134, 234], menu: [33, 172], play: [75, 172], select: [117, 172], labelY: 200, hint: [75, 228] };
   const svg = S('svg', { viewBox: g.vb, 'aria-label': 'On-screen remote', role: 'group' },
     S('rect', { x: g.rect[0], y: g.rect[1], width: g.rect[2], height: g.rect[3], rx: 26, fill: 'rgba(0,0,0,0.04)', stroke: '#b7996d', 'stroke-opacity': '.8', 'stroke-width': '1.4' }),
     S('g', { id: 'pad' },
@@ -38,6 +39,12 @@ export function remotePad(send, { wide = false } = {}) {
       S('circle', { cx: g.select[0], cy: g.select[1], r: 17, fill: 'rgba(0,0,0,0.04)', stroke: '#b7996d', 'stroke-opacity': '.8', 'stroke-width': '1.2' }),
       S('circle', { class: 'flash', 'data-k': 'enter', cx: g.select[0], cy: g.select[1], r: 17, fill: '#b7996d', 'fill-opacity': '.45' }),
       S('circle', { cx: g.select[0], cy: g.select[1], r: 5, fill: '#b7996d' })),
+    S('g', { id: 'play', 'data-k': 'playpause' },
+      S('circle', { cx: g.play[0], cy: g.play[1], r: 17, fill: 'rgba(0,0,0,0.04)', stroke: '#b7996d', 'stroke-opacity': '.8', 'stroke-width': '1.2' }),
+      S('circle', { class: 'flash', 'data-k': 'playpause', cx: g.play[0], cy: g.play[1], r: 17, fill: '#b7996d', 'fill-opacity': '.45' }),
+      S('path', { d: `M${g.play[0] - 8} ${g.play[1] - 6} l7 6 l-7 6 Z`, fill: '#b7996d' }),
+      S('path', { d: `M${g.play[0] + 2} ${g.play[1] - 6} v12 M${g.play[0] + 7} ${g.play[1] - 6} v12`, stroke: '#b7996d', 'stroke-width': '2', 'stroke-linecap': 'round' })),
+    S('text', { x: g.play[0], y: g.labelY, 'text-anchor': 'middle', 'font-family': 'Inter, sans-serif', 'font-size': '6.5', 'letter-spacing': '1', fill: '#7d683f' }, 'PLAY'),
     S('text', { x: g.menu[0], y: g.labelY, 'text-anchor': 'middle', 'font-family': 'Inter, sans-serif', 'font-size': '6.5', 'letter-spacing': '1.5', fill: '#7d683f' }, 'MENU'),
     S('text', { x: g.select[0], y: g.labelY, 'text-anchor': 'middle', 'font-family': 'Inter, sans-serif', 'font-size': '6.5', 'letter-spacing': '1.5', fill: '#7d683f' }, 'SELECT'),
     S('text', { x: g.hint[0], y: g.hint[1], 'text-anchor': 'middle', 'font-family': 'Inter, sans-serif', 'font-size': '6', 'letter-spacing': '1', fill: '#7d683f' }, 'SWIPE OR TAP THE PAD'));
@@ -65,7 +72,7 @@ export function remotePad(send, { wide = false } = {}) {
     fire(key);
   });
   pad.addEventListener('pointercancel', () => { start = null; });
-  for (const id of ['menu', 'select']) {
+  for (const id of ['menu', 'select', 'play']) {
     const g = svg.querySelector('#' + id);
     g.style.cursor = 'pointer';
     g.addEventListener('pointerdown', (ev) => ev.preventDefault());

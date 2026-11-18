@@ -115,6 +115,8 @@ export function debounce(fn, ms) {
   /** Runs the waiting call now (if any). */
   wrapped.flush = () => { if (pending) { const args = pending; clearTimeout(t); pending = null; fn(...args); } };
   wrapped.cancel = () => { clearTimeout(t); pending = null; };
+  /** True while a call is waiting to run. */
+  wrapped.pending = () => pending !== null;
   return wrapped;
 }
 

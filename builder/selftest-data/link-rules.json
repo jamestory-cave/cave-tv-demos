@@ -1,0 +1,302 @@
+{
+ "about": "Shared cases for the link rules (QR codes). Checked by selftest.html (validate.js) and by builder/server/tests/test_overrides.py (cave_overrides.py), so the Builder and the server always agree. qr = the master's and a page version's rule; override = a QR that differs by room (https only); normalised = what is published for an override. problem = what the by-room rule says is wrong (QA-12), qrProblem = what the master's rule says; both sides must give exactly these words. Invisible characters (U+0085, U+001C to U+001F, U+200B, U+FEFF) and other non-ASCII are refused the same way by both (QA-11).",
+ "cases": [
+  {
+   "text": "https://www.cavehotels.com/",
+   "qr": true,
+   "override": true,
+   "normalised": "https://www.cavehotels.com/",
+   "problem": null,
+   "qrProblem": null
+  },
+  {
+   "text": "https://order.cavehotels.com?room=102",
+   "qr": true,
+   "override": true,
+   "normalised": "https://order.cavehotels.com?room=102",
+   "problem": null,
+   "qrProblem": null
+  },
+  {
+   "text": "https://order.cavehotels.com#room-102",
+   "qr": true,
+   "override": true,
+   "normalised": "https://order.cavehotels.com#room-102",
+   "problem": null,
+   "qrProblem": null
+  },
+  {
+   "text": "HTTPS://ORDER.CAVEHOTELS.COM/R/103",
+   "qr": true,
+   "override": true,
+   "normalised": "https://order.cavehotels.com/R/103",
+   "problem": null,
+   "qrProblem": null
+  },
+  {
+   "text": "Https://Order.Example.com:8443/a/b?c=d&e=f",
+   "qr": true,
+   "override": true,
+   "normalised": "https://order.example.com:8443/a/b?c=d&e=f",
+   "problem": null,
+   "qrProblem": null
+  },
+  {
+   "text": "  https://order.example.com/r/214  ",
+   "qr": true,
+   "override": true,
+   "normalised": "https://order.example.com/r/214",
+   "problem": null,
+   "qrProblem": null
+  },
+  {
+   "text": "https://order.example.com",
+   "qr": true,
+   "override": true,
+   "normalised": "https://order.example.com",
+   "problem": null,
+   "qrProblem": null
+  },
+  {
+   "text": "https://xn--caf-dma.example.com/menu",
+   "qr": true,
+   "override": true,
+   "normalised": "https://xn--caf-dma.example.com/menu",
+   "problem": null,
+   "qrProblem": null
+  },
+  {
+   "text": "http://order.example.com/r/102",
+   "qr": true,
+   "override": false,
+   "problem": "it starts http://; a link that differs by room must start https://",
+   "qrProblem": null
+  },
+  {
+   "text": "HTTP://ORDER.EXAMPLE.COM",
+   "qr": true,
+   "override": false,
+   "problem": "it starts http://; a link that differs by room must start https://",
+   "qrProblem": null
+  },
+  {
+   "text": "WIFI:T:nopass;S:Cave Hotel Guest;;",
+   "qr": true,
+   "override": false,
+   "problem": "it has a space in it",
+   "qrProblem": null
+  },
+  {
+   "text": "wifi:T:WPA;S:Guest;P:x;;",
+   "qr": true,
+   "override": false,
+   "problem": "it should start https://",
+   "qrProblem": null
+  },
+  {
+   "text": "https://order.example.com/r/214 Order from 214",
+   "qr": false,
+   "override": false,
+   "problem": "it has a space in it",
+   "qrProblem": "it has a space in it"
+  },
+  {
+   "text": "https://order.example.com/r/2\u00a014",
+   "qr": false,
+   "override": false,
+   "problem": "it has an invisible character in it (U+00A0)",
+   "qrProblem": "it has an invisible character in it (U+00A0)"
+  },
+  {
+   "text": "https://localhost/",
+   "qr": false,
+   "override": false,
+   "problem": "\"localhost\" is not a full site address (it needs a dot, as in example.com)",
+   "qrProblem": "\"localhost\" is not a full site address (it needs a dot, as in example.com)"
+  },
+  {
+   "text": "https://order.example.com:/x",
+   "qr": false,
+   "override": false,
+   "problem": "the number after \":\" in the site's address is not a port number",
+   "qrProblem": "the number after \":\" in the site's address is not a port number"
+  },
+  {
+   "text": "https://user@order.example.com/",
+   "qr": false,
+   "override": false,
+   "problem": "it has an \"@\" before the site's address, which phones treat as a sign-in",
+   "qrProblem": "it has an \"@\" before the site's address, which phones treat as a sign-in"
+  },
+  {
+   "text": "https://.example.com/",
+   "qr": false,
+   "override": false,
+   "problem": "\".example.com\" is not a full site address (it needs a dot, as in example.com)",
+   "qrProblem": "\".example.com\" is not a full site address (it needs a dot, as in example.com)"
+  },
+  {
+   "text": "ftp://order.example.com/",
+   "qr": false,
+   "override": false,
+   "problem": "it starts \"ftp:\" instead of https://",
+   "qrProblem": "it starts \"ftp:\" instead of https://"
+  },
+  {
+   "text": "order.example.com",
+   "qr": false,
+   "override": false,
+   "problem": "it should start https://",
+   "qrProblem": "it should start https:// (or be a Wi-Fi code)"
+  },
+  {
+   "text": "not a link",
+   "qr": false,
+   "override": false,
+   "problem": "it has a space in it",
+   "qrProblem": "it has a space in it"
+  },
+  {
+   "text": "",
+   "qr": false,
+   "override": false,
+   "problem": "there is no web address",
+   "qrProblem": "there is no web address"
+  },
+  {
+   "text": "javascript:alert(1)",
+   "qr": false,
+   "override": false,
+   "problem": "it should start https://",
+   "qrProblem": "it should start https:// (or be a Wi-Fi code)"
+  },
+  {
+   "text": "https://order.example.com/r/101\n",
+   "qr": true,
+   "override": true,
+   "normalised": "https://order.example.com/r/101",
+   "problem": null,
+   "qrProblem": null
+  },
+  {
+   "text": "https://order.example.com/r/1\n01",
+   "qr": false,
+   "override": false,
+   "problem": "it has an invisible character in it (U+000A)",
+   "qrProblem": "it has an invisible character in it (U+000A)"
+  },
+  {
+   "text": "https://order.example.com/r/2\u0085",
+   "qr": false,
+   "override": false,
+   "problem": "it has an invisible character in it (U+0085)",
+   "qrProblem": "it has an invisible character in it (U+0085)"
+  },
+  {
+   "text": "https://order.example.com/r/201\u001f",
+   "qr": false,
+   "override": false,
+   "problem": "it has an invisible character in it (U+001F)",
+   "qrProblem": "it has an invisible character in it (U+001F)"
+  },
+  {
+   "text": "\u001chttps://order.example.com/",
+   "qr": false,
+   "override": false,
+   "problem": "it has an invisible character in it (U+001C)",
+   "qrProblem": "it has an invisible character in it (U+001C)"
+  },
+  {
+   "text": "https://order.example.com/r/\u001d1",
+   "qr": false,
+   "override": false,
+   "problem": "it has an invisible character in it (U+001D)",
+   "qrProblem": "it has an invisible character in it (U+001D)"
+  },
+  {
+   "text": "https://order.example.com/\u001e",
+   "qr": false,
+   "override": false,
+   "problem": "it has an invisible character in it (U+001E)",
+   "qrProblem": "it has an invisible character in it (U+001E)"
+  },
+  {
+   "text": "https://order.example.com/r/1\u200b",
+   "qr": false,
+   "override": false,
+   "problem": "it has an invisible character in it (U+200B)",
+   "qrProblem": "it has an invisible character in it (U+200B)"
+  },
+  {
+   "text": "\ufeffhttps://order.example.com/",
+   "qr": false,
+   "override": false,
+   "problem": "it has an invisible character in it (U+FEFF)",
+   "qrProblem": "it has an invisible character in it (U+FEFF)"
+  },
+  {
+   "text": "https://kaf\u00e9.example.com/",
+   "qr": false,
+   "override": false,
+   "problem": "it has \"\u00e9\" in it; a web address can only use plain letters, digits and signs such as / ? = &",
+   "qrProblem": "it has \"\u00e9\" in it; a web address can only use plain letters, digits and signs such as / ? = &"
+  },
+  {
+   "text": "https://order.example.com/caf\u00e9",
+   "qr": false,
+   "override": false,
+   "problem": "it has \"\u00e9\" in it; a web address can only use plain letters, digits and signs such as / ? = &",
+   "qrProblem": "it has \"\u00e9\" in it; a web address can only use plain letters, digits and signs such as / ? = &"
+  },
+  {
+   "text": "https://order.example.com/\ud83c\udf75",
+   "qr": false,
+   "override": false,
+   "problem": "it has \"\ud83c\udf75\" in it; a web address can only use plain letters, digits and signs such as / ? = &",
+   "qrProblem": "it has \"\ud83c\udf75\" in it; a web address can only use plain letters, digits and signs such as / ? = &"
+  },
+  {
+   "text": "https://order.example.com:99x/",
+   "qr": false,
+   "override": false,
+   "problem": "the number after \":\" in the site's address is not a port number",
+   "qrProblem": "the number after \":\" in the site's address is not a port number"
+  },
+  {
+   "text": "https://:443/",
+   "qr": false,
+   "override": false,
+   "problem": "there is no site address after \"://\"",
+   "qrProblem": "there is no site address after \"://\""
+  },
+  {
+   "text": "https:///path",
+   "qr": false,
+   "override": false,
+   "problem": "there is no site address after \"://\"",
+   "qrProblem": "there is no site address after \"://\""
+  },
+  {
+   "text": "HTTP://order.example.com/r/1",
+   "qr": true,
+   "override": false,
+   "problem": "it starts http://; a link that differs by room must start https://",
+   "qrProblem": null
+  },
+  {
+   "text": "\thttps://order.example.com/r/tab\t",
+   "qr": true,
+   "override": true,
+   "problem": null,
+   "qrProblem": null,
+   "normalised": "https://order.example.com/r/tab"
+  },
+  {
+   "text": "WIFI:T:WPA;S:Caf\u00e9 Guest;P:x;;",
+   "qr": true,
+   "override": false,
+   "problem": "it has \"\u00e9\" in it; a web address can only use plain letters, digits and signs such as / ? = &",
+   "qrProblem": null
+  }
+ ]
+}

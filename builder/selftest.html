@@ -19,7 +19,7 @@
 <body>
 <main>
   <h1>Cave Builder self-test</h1>
-  <p class="muted">Loads the published bundle, runs it through the editor model and the bundle generator, and checks the output equals the input (ignoring key order and whitespace). Then exercises the change list, hiding, delete and undo, the publish call sequence against a fake GitHub, and the stage-2 fields: photo frames, films, background film, finished pages, the MP4 probe and film uploads.</p>
+  <p class="muted">Loads the published bundle, runs it through the editor model and the bundle generator, and checks the output equals the input (ignoring key order and whitespace). Then exercises the change list, hiding, delete and undo, the publish call sequence against a fake GitHub, and the stage-2 fields: photo frames, films, background film, finished pages, the MP4 probe and film uploads. Phase B adds the better gallery: every new field round trip, limits, blockers, change lines, merging, page versions, the preview and its remote walk, the older-app warning and a publish through the fake GitHub.</p>
   <div id="summary">Running…</div>
   <div id="results"></div>
   <h2 style="margin-top:24px">Publish call sequence (fake transport)</h2>
@@ -37,7 +37,7 @@ import { canonical, clone, utf8ToBase64 } from './js/util.js';
 import { model, movePage, removePage, addPage, findIn, newPage, reparentPage, moveTargets } from './js/model.js';
 import { buildBundle, bundleText } from './js/bundle.js';
 import { describeChanges } from './js/changes.js';
-import { validateAll, hasStop } from './js/validate.js';
+import { validateAll, hasStop, LIMITS, validatePage } from './js/validate.js';
 import { GitHubStore } from './js/stores/github.js';
 import { encodeQR, qrSVG } from './js/preview/qr.js';
 import { threeWayMerge } from './js/merge.js';
@@ -47,6 +47,12 @@ import { TVPreview, hasOwnContent } from './js/preview/stage.js';
 import { parseMediaPath, shapeOf, slideProblem, prepareSlide, slidePathFor, MediaRegistry, filmRules, filmPath } from './js/media.js';
 import { postersIn } from './js/stores/github.js';
 import { mediaPathsIn } from './js/bundle.js';
+import { setTag, setValue, getField, tagOf, dropSummary, effectiveDoc, resolveForPublish, effectivePage, diffPatch, setVersionPatch, versionPatch, cardField, fieldDef } from './js/overrides.js';
+import { validQR, validHTTPS, normaliseLink, linkProblem } from './js/validate.js';
+import { parseList } from './js/screens/overrides.js';
+import { renderGalleryViewer } from './js/preview/pages.js';
+import { pageChoices } from './js/model.js';
+import { galleryOptions, setFrames, setOptions, orderByChapter, chapterRuns, frameCount, parseCaptions, reconcileFrames, newGalleryFeatures, olderAppWarning, matchChapter, GALLERY_PRESETS } from './js/gallery.js';
 
 const results = document.getElementById('results');
 let pass = 0, fail = 0;
@@ -62,6 +68,65 @@ function check(name, ok, detail) {
   results.append(row);
   if (ok) pass++; else fail++;
 }
+
+/** The server's cave_overrides.apply, line for line (the Python side is checked against the same fixture). */
+function applyEntriesF(bundle, entries, typeId, room, cards = {}) {
+  const out = clone(bundle);
+  const idx = new Map(); (function w(p) { idx.set(p.id, p); (p.children || []).forEach(w); })(out.home);
+  const mIdx = new Map(); (function w(p) { mIdx.set(p.id, p); (p.children || []).forEach(w); })(bundle.home);
+  const ids = clone(cards);
+  const qrOf = (it) => (it && it.qr && (it.qr.url || it.qr.label) ? it.qr : null);
+  const masterQR = {};
+  for (const [pid, v] of Object.entries(cards || {})) { const items = mIdx.get(pid)?.items || []; if (items.length === v.length) masterQR[pid] = Object.fromEntries(v.map((c, i) => [c, qrOf(items[i])])); }
+  const roomSet = {};
+  const withLabel = (v, cur) => ({ label: typeof v.label === 'string' ? v.label : (cur && typeof cur.label === 'string' ? cur.label : ''), url: v.url });
+  const look = (vals, key) => { if (key == null) return undefined; if (key in vals) return vals[key]; const k = Object.keys(vals).find((x) => x.toLowerCase() === String(key).toLowerCase()); return k === undefined ? undefined : vals[k]; };
+  const place = (e, v, pg, reapply) => {
+    let at = e.path[1];
+    const known = ids[e.page];
+    if (e.card && known) {
+      at = known.length === (pg.items || []).length ? known.indexOf(e.card) : -1;
+      if (at < 0) return;
+      if (reapply && roomSet[e.page]?.has(e.card)) return;
+    }
+    if (pg.items?.[at]) pg.items[at][e.path[2]] = withLabel(v, pg.items[at][e.path[2]]);
+  };
+  const tkey = typeId == null ? null : String(typeId);
+  for (const scope of ['type', 'room']) {
+    const key = scope === 'type' ? tkey : room;
+    if (key == null) continue;
+    const mine = entries.filter((x) => x.by === scope);
+    for (const e of mine.filter((x) => !x.path.length)) {
+      const v = look(e.values, key); const pg = idx.get(e.page);
+      if (v === undefined || !pg) continue;
+      for (const [k, x] of Object.entries(v)) { if (x === null) delete pg[k]; else pg[k] = clone(x); }
+      if ('items' in v) {
+        const vc = look(e.cards || {}, key);
+        ids[e.page] = vc !== undefined ? [...vc] : (v.items === null ? [] : null);
+        if (scope === 'room' && vc !== undefined && masterQR[e.page]) roomSet[e.page] = new Set(vc.filter((c, i) => c in masterQR[e.page] && canonical(qrOf((pg.items || [])[i])) !== canonical(masterQR[e.page][c])));
+      }
+      if (pg.hoursTitle && !(pg.hours || []).length) delete pg.hoursTitle;
+    }
+    if (scope === 'room' && tkey != null) {
+      for (const e of entries) {
+        if (e.by !== 'type' || e.path.length !== 3 || !e.card) continue;
+        if (!mine.some((x) => !x.path.length && x.page === e.page && 'items' in (look(x.values, key) || {}))) continue;
+        const v = look(e.values, tkey); const pg = idx.get(e.page);
+        if (v !== undefined && pg) place(e, v, pg, true);
+      }
+    }
+    for (const e of mine.filter((x) => x.path.length)) {
+      const v = look(e.values, key); const pg = idx.get(e.page);
+      if (v === undefined || !pg) continue;
+      if (e.path.length === 1) pg[e.path[0]] = e.path[0] === 'qr' ? withLabel(v, pg.qr) : clone(v);
+      else place(e, v, pg, false);
+    }
+  }
+  return out;
+}
+
+/** 'Small plates › Smoked bone marrow': the first part and dish of the Firepit menu. */
+function base_dish_path(b) { const sec = findIn(b, 'firepit-menu').page.sections[0]; return `${sec.title} › ${sec.items[0].name}`; }
 
 async function run() {
   // 1. Round trip.
@@ -155,8 +220,16 @@ async function run() {
   const b6 = buildBundle(model.draft, { revision: 3, held: v6, published: published.bundle });
   check('A NEW page with a blocker is left out', !JSON.stringify(b6.bundle).includes('newpage-test1') && b6.heldBack.find((h) => h.id === 'newpage-test1')?.kept === false);
   model.undo();
-  const v2 = validateAll(model.draft, { imageSize: (src) => (src === 'hero-firepit' ? { width: 1280, height: 853 } : src === 'hero-pool' ? { width: 1282, height: 1920 } : null) });
-  check('A strip photo under 1920 px is a blocker; a portrait 1282 × 1920 is fine', v2.get('firepit').blockers.some((b) => b.field === 'image') && !v2.get('spa').blockers.some((b) => b.field === 'image'));
+  {
+    // Sizes are given to whatever photos the Firepit and the spa use today (the live content changes);
+    // if they share one photo the spa is pointed at another for this check only.
+    const fpImg = findIn(model.draft, 'firepit').page.image;
+    if (findIn(model.draft, 'spa').page.image === fpImg) model.commit('spa photo', (d) => { findIn(d, 'spa').page.image = fpImg === 'hero-pool' ? 'hero-eat' : 'hero-pool'; });
+    const spaImg = findIn(model.draft, 'spa').page.image;
+    const v2 = validateAll(model.draft, { imageSize: (src) => (src === fpImg ? { width: 1280, height: 853 } : src === spaImg ? { width: 1282, height: 1920 } : null) });
+    check('A strip photo under 1920 px is a blocker; a portrait 1282 × 1920 is fine', v2.get('firepit').blockers.some((b) => b.field === 'image') && !v2.get('spa').blockers.some((b) => b.field === 'image'), `${fpImg} / ${spaImg}`);
+    if (spaImg !== findIn(published.bundle, 'spa').page.image) model.undo();
+  }
   model.commit('badqr', (d) => { findIn(d, 'cowgirl').page.qr.url = 'not a url'; });
   check('An invalid QR address is a blocker', validateAll(model.draft).get('cowgirl').blockers.some((b) => b.field === 'qr.url'));
   model.undo();
@@ -187,8 +260,14 @@ async function run() {
   const bAll = buildBundle(model.draft, { revision: 3, held: validateAll(model.draft), published: published.bundle });
   check('Home with every section hidden produces no sections (publish is refused by the plan)', !(bAll.bundle.home.children || []).length);
   model.undo();
-  model.commit('nine', (d) => { for (let i = 0; i < 2; i++) addPage(d, 'home', { id: `extra-${i}`, type: 'hub', title: `Extra ${i}`, image: 'hero-eat', children: [] }); });
-  check('More than 8 sections is a blocker on Home', validateAll(model.draft).get('home').blockers.some((b) => /9 sections/.test(b.message)));
+  {
+    // As many extra sections as it takes to pass the limit, from however many the live content has.
+    const shown = model.draft.home.children.filter((c) => !c.hidden).length;
+    const extra = Math.max(1, LIMITS.sectionsMax + 1 - shown);
+    model.commit('nine', (d) => { for (let i = 0; i < extra; i++) addPage(d, 'home', { id: `extra-${i}`, type: 'hub', title: `Extra ${i}`, image: 'hero-eat', children: [] }); });
+    const msg = `${shown + extra} sections showing; the TV fits ${LIMITS.sectionsMax} at most`;
+    check(`More than ${LIMITS.sectionsMax} sections is a blocker on Home`, validateAll(model.draft).get('home').blockers.some((b) => b.message.startsWith(msg)), msg);
+  }
   model.undo();
   model.commit('dupe', (d) => { d.home.children[1].title = d.home.children[0].title; });
   check('Duplicate section titles are a warning, not a blocker', validateAll(model.draft).get('home').warnings.some((w) => /same name/.test(w.message)) && !validateAll(model.draft).get('home').blockers.length);
@@ -208,11 +287,59 @@ async function run() {
     mine.hotel.checkout = '11:30am';
     findIn(mine, 'firepit-menu').page.sections[0].items[0].price = '£14';   // conflicts with theirs
     findIn(mine, 'deck').page.hidden = true;
-    movePage(mine, 'home', 6, 0);                                              // Contact first
+    movePage(mine, 'home', mine.home.children.findIndex((c) => c.id === 'contact'), 0);   // Contact first
     addPage(mine, 'eat', { id: 'lounge-test1', type: 'info', title: 'Cowgirl Lounge', image: 'hero-cowgirl', body: 'x' });
     const r = threeWayMerge(base, theirs, mine);
-    check('Rebase keeps the newer publish where both changed the same thing', findIn(r.doc, 'firepit-menu').page.sections[0].items[0].price === '£21' && r.conflicts.some((c) => /Firepit Menu: kept the newer publish's menu/.test(c)), r.conflicts.join(' | '));
+    check('Rebase keeps the newer publish where both changed the same thing, and names the dish and both prices', findIn(r.doc, 'firepit-menu').page.sections[0].items[0].price === '£21' && r.conflicts.some((c) => c.includes(`Firepit Menu › ${base_dish_path(base)}: kept the newer publish's price ("£21") instead of yours ("£14")`)), r.conflicts.join(' | '));
     check('Rebase carries over my other changes (hotel, hidden, reorder, new page)', r.doc.hotel.checkout === '11:30am' && findIn(r.doc, 'deck').page.hidden === true && r.doc.home.children[0].id === 'contact' && findIn(r.doc, 'lounge-test1') && findIn(r.doc, 'golf').page.title === 'Golf at Cave');
+    // Dish-level merging (QA-3): different dishes, parts and cards are all kept.
+    {
+      const b2 = clone(published.bundle), t2 = clone(b2), m2 = clone(b2);
+      const items = (d) => findIn(d, 'firepit-menu').page.sections[0].items;
+      items(t2)[0].price = '£30';                                   // they: first dish
+      items(m2)[1].price = '£31';                                   // me: second dish
+      items(m2)[2].description = 'Mine';                            // me: third dish
+      findIn(m2, 'firepit-menu').page.sections[0].items.push({ name: 'New dish', price: '£5' });
+      findIn(t2, 'firepit-menu').page.sections.at(-1).items.unshift({ name: 'Their new dish', price: '£6' });
+      const r2 = threeWayMerge(b2, t2, m2, { who: 'James' });
+      const got = items(r2.doc);
+      check('Two people changing different dishes of one menu: both kept, nothing reported lost', got[0].price === '£30' && got[1].price === '£31' && got[2].description === 'Mine' && got.at(-1).name === 'New dish' && findIn(r2.doc, 'firepit-menu').page.sections.at(-1).items[0].name === 'Their new dish' && !r2.conflicts.length, r2.conflicts.join(' | '));
+      const m3 = clone(b2); items(m3).splice(1, 1);                 // I delete dish 2 while they change dish 1
+      const r3 = threeWayMerge(b2, t2, m3, { who: 'James' });
+      check('Deleting one dish while a colleague edits another: both happen', items(r3.doc).length === items(b2).length - 1 && items(r3.doc)[0].price === '£30' && !r3.conflicts.length, r3.conflicts.join(' | '));
+      const m4 = clone(b2); items(m4)[0].price = '£99';
+      const r4 = threeWayMerge(b2, t2, m4, { who: 'James' });
+      check('Same dish, same field: the message names the dish, the field and both values', r4.conflicts.length === 1 && r4.conflicts[0].endsWith(`› ${items(b2)[0].name}: kept James's price ("£30") instead of yours ("£99")`), r4.conflicts.join(' | '));
+      // OBS-4: one side deletes a dish and renames the next; the other edits the deleted dish. Both ways round.
+      {
+        const first = items(b2)[0].name, second = items(b2)[1].name;
+        for (const [label, edit, field] of [['tag', (d) => { d.tags = [...(d.tags || []), 'n']; }, 'tags'], ['price', (d) => { d.price = '£15'; }, 'price']]) {
+          const tD = clone(b2), mD = clone(b2);
+          items(tD).splice(0, 1); items(tD)[0].name = 'Fried chicken';        // they delete dish 1 and rename dish 2
+          edit(items(mD)[0]);                                                // I edit dish 1
+          const r6 = threeWayMerge(b2, tD, mD, { who: 'James' });
+          const fried = items(r6.doc).find((d) => d.name === 'Fried chicken');
+          check(`OBS-4 · they delete a dish and rename the next, I change the deleted dish's ${label}: nothing lands on the renamed dish, and I am told about the right dish`,
+            !items(r6.doc).some((d) => d.name === first) && fried && JSON.stringify(fried[field]) === JSON.stringify(items(b2)[1][field]) && r6.conflicts.length === 1 && r6.conflicts[0].includes(`› ${first}: was removed by James`), r6.conflicts.join(' | ') + ' · ' + JSON.stringify(fried));
+          const r7 = threeWayMerge(b2, mD, tD, { who: 'James' });            // the other way round
+          const fried7 = items(r7.doc).find((d) => d.name === 'Fried chicken');
+          check(`OBS-4 · the other way round (${label}): their change to the dish I deleted is kept on that dish, and my rename is kept`,
+            items(r7.doc).some((d) => d.name === first && JSON.stringify(d[field]) === JSON.stringify(items(mD)[0][field])) && fried7 && JSON.stringify(fried7[field]) === JSON.stringify(items(b2)[1][field]) && r7.conflicts.length === 1 && r7.conflicts[0].includes(`› ${first}: you removed it but James changed it`), r7.conflicts.join(' | '));
+          void second;
+        }
+        // With ids (Content.swift accepts them on parts and dishes) the match is exact even then.
+        const bI = clone(b2); items(bI).forEach((d, i) => { d.id = `d${i}`; });
+        const tI = clone(bI), mI = clone(bI);
+        items(tI).splice(0, 1); items(tI)[0].name = 'Fried chicken';
+        items(mI)[1].price = '£19';                                          // I edit the dish they renamed
+        const r8 = threeWayMerge(bI, tI, mI, { who: 'James' });
+        check('Dishes with ids: my price goes onto the renamed dish, and nothing is reported lost', items(r8.doc).find((d) => d.id === 'd1')?.price === '£19' && items(r8.doc).find((d) => d.id === 'd1')?.name === 'Fried chicken' && !r8.conflicts.length, r8.conflicts.join(' | '));
+      }
+      const tg = clone(b2), mg = clone(b2);
+      findIn(tg, 'golf').page.title = 'Golf at Cave'; findIn(mg, 'golf').page.subtitle = 'Mine';
+      const r5 = threeWayMerge(b2, tg, mg, { who: 'James' });
+      check('Same page, different fields: both kept', findIn(r5.doc, 'golf').page.title === 'Golf at Cave' && findIn(r5.doc, 'golf').page.subtitle === 'Mine' && !r5.conflicts.length);
+    }
     const clean = describeChanges(theirs, r.doc).summary;
     check('After the rebase the change list does not revert their publish', !clean.some((s) => /£21 → £14|Golf at Cave" → "Golf"/.test(s)), clean.join(' | '));
   }
@@ -220,7 +347,8 @@ async function run() {
   // 7. Publish against a fake GitHub.
   const calls = [];
   // The fake repository's files are base64 as GitHub returns them; history may hold "›" and "→", so not btoa.
-  const fakeVersion = utf8ToBase64(JSON.stringify({ schema: 1, revision: published.version.revision, bundle: published.version.bundle }));
+  // As in the repository: version.json carries publishedAt (the Builder must stamp past it).
+  const fakeVersion = utf8ToBase64(JSON.stringify({ schema: 1, revision: published.version.revision, bundle: published.version.bundle, publishedAt: published.version.publishedAt }));
   const fakeHistory = utf8ToBase64(JSON.stringify(published.history || []));
   const fake = async (method, url, body) => {
     const path = url.replace(config.apiBase, '');
@@ -253,6 +381,12 @@ async function run() {
     const rr = await store.publish({ bundle: clone(published.bundle), basedOnRevision: published.version.revision, summary: ['Restored revision 1'], by: 'Self-test', note: 'Restore', media: [], mediaIndex: published.mediaIndex });
     const at = Date.parse(rr.version.publishedAt);
     check('Restore writes version.json with publishedAt = now, a new revision and a new history entry', rr.revision === published.version.revision + 1 && at >= before - 1000 && at <= Date.now() + 1000 && rr.version.publishedAt !== published.version.publishedAt && rr.historyEntry.revision === rr.revision && rr.historyEntry.publishedAt === rr.version.publishedAt && rr.bundlePath !== published.version.bundle, `${published.version.publishedAt} -> ${rr.version.publishedAt}, revision ${rr.revision}`);
+    // publishedAt always moves forward, even when the live one is from this same second or later (QA-10).
+    const ahead = new Date(Math.floor(Date.now() / 1000) * 1000 + 60000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+    const fakeAhead = async (method, url, body) => (method === 'GET' && url.includes('/contents/') && url.includes('version.json')
+      ? { content: utf8ToBase64(JSON.stringify({ schema: 1, revision: published.version.revision, bundle: published.version.bundle, publishedAt: ahead })) } : fake(method, url, body));
+    const ra = await new GitHubStore({ transport: fakeAhead }).publish({ bundle: clone(published.bundle), basedOnRevision: published.version.revision, summary: [], by: 'Self-test', media: [], mediaIndex: published.mediaIndex });
+    check('publishedAt moves one second past a live version.json from the same second or later', Date.parse(ra.version.publishedAt) === Date.parse(ahead) + 1000, `${ahead} -> ${ra.version.publishedAt}`);
   }
   let conflict = null;
   try { await store.publish({ bundle: b2, basedOnRevision: published.version.revision - 1, summary: [], by: 'x' }); } catch (e) { conflict = e; }
@@ -265,14 +399,19 @@ async function run() {
     firepit.photos = [{ image: 'media/aaaaaaaaaaaa-1920.jpg', fit: 'whole', caption: 'Our mark' }, { image: 'media/bbbbbbbbbbbb-1920.jpg', fit: 'fill' }];
     firepit.films = [{ film: 'media/cccccccccccc-1080.mp4', poster: 'media/dddddddddddd-1920.jpg', title: 'Your lighting scenes', seconds: 42 }];
     firepit.backgroundFilm = { film: 'media/eeeeeeeeeeee-1080.mp4', poster: 'media/ffffffffffff-1920.jpg' };
-    addPage(base, 'home', { id: 'fire-plan-test', type: 'finished', title: 'Fire plan', description: 'Escape routes and assembly point', image: 'media/111111111111-1920.jpg',
+    // On Home when there is room for another section; otherwise inside the first section that holds pages (still a strip).
+    const finParent = base.home.children.filter((c) => !c.hidden).length < LIMITS.sectionsMax ? 'home' : base.home.children.find((c) => c.type === 'hub').id;
+    addPage(base, finParent, { id: 'fire-plan-test', type: 'finished', title: 'Fire plan', description: 'Escape routes and assembly point', image: 'media/111111111111-1920.jpg',
       slides: [{ image: 'media/111111111111-1920.jpg' }, { image: 'media/222222222222-1920.jpg' }, { film: 'media/cccccccccccc-1080.mp4', poster: 'media/dddddddddddd-1920.jpg' }], qr: { label: 'Leave a review', url: 'https://www.cavehotels.com/' } });
     model.load({ ...published, bundle: base }, null);
     const sizes = { 'media/aaaaaaaaaaaa-1920.jpg': { width: 900, height: 200 }, 'media/bbbbbbbbbbbb-1920.jpg': { width: 2400, height: 1600 }, 'media/dddddddddddd-1920.jpg': { width: 1920, height: 1080 }, 'media/ffffffffffff-1920.jpg': { width: 1920, height: 1080 }, 'media/111111111111-1920.jpg': { width: 3840, height: 2160 }, 'media/222222222222-1920.jpg': { width: 1920, height: 1080 } };
     const filmsInfo = { 'media/cccccccccccc-1080.mp4': { name: 'Lighting', width: 1920, height: 1080, seconds: 42, audio: true, silent: false }, 'media/eeeeeeeeeeee-1080.mp4': { name: 'Pool loop', width: 1920, height: 1080, seconds: 12, audio: false, silent: false } };
     // Synthetic paths (a repeated hex digit) are known only when listed; real media in the published content counts as known.
     const synthetic = (s) => /^media\/([0-9a-f])\1{11}-/.test(s || '');
-    const ctx = { imageSize: (s) => sizes[s] || null, imageKnown: (s) => !parseMediaPath(s) || !synthetic(s) || s in sizes || s in filmsInfo, filmInfo: (s) => filmsInfo[s] || null };
+    // Photos and films already published (in media/index.json) are known too, so
+    // real content that uses them does not count as missing.
+    const pub = (s) => { const p = parseMediaPath(s); return p ? (p.kind === 'film' ? published.mediaIndex?.films?.[p.hash] : published.mediaIndex?.media?.[p.hash]) || null : null; };
+    const ctx = { imageSize: (s) => sizes[s] || null, imageKnown: (s) => !parseMediaPath(s) || !synthetic(s) || s in sizes || s in filmsInfo || !!pub(s), filmInfo: (s) => filmsInfo[s] || (parseMediaPath(s)?.kind === 'film' ? pub(s) : null) };
     const v9 = validateAll(model.draft, ctx);
     check('Stage-2 content with no problems has no blockers', ![...v9.values()].some((r) => r.blockers.length), [...v9].filter(([, r]) => r.blockers.length).map(([id, r]) => id + ': ' + r.blockers.map((b) => b.message).join('; ')).join(' | '));
     const b9 = buildBundle(model.draft, { revision: base.version, held: v9 }).bundle;
@@ -539,7 +678,15 @@ async function run() {
     model.commit('card qr', (d) => { const p = findIn(d, 'whatson').page; p.items[0].qr = { label: 'Tickets', url: 'https://www.cavehotels.com/whats-on/' }; p.items[1].qr = { label: '', url: '' }; p.qr = { label: 'Everything on', url: 'https://www.cavehotels.com/' }; });
     const wo = pageOut('whatson');
     check('A card QR is published as {label, url}; an empty one is left out; the list page keeps its own QR', canonical(wo.items[0].qr) === canonical({ label: 'Tickets', url: 'https://www.cavehotels.com/whats-on/' }) && !('qr' in wo.items[1]) && wo.qr?.label === 'Everything on');
-    check('The change list names the card QR and the page QR', ['QR code added', 'QR link added'].every((t) => describeChanges(published.bundle, model.draft).summary.some((x) => x.includes("What's On") && x.includes(t))), describeChanges(published.bundle, model.draft).summary.filter((x) => x.includes("What's On")).join(' | '));
+    {
+      // Worked out from the live What's On (QA-8): its first card and the page may already have QR codes.
+      const pubWO = findIn(published.bundle, 'whatson')?.page;
+      const card0 = pubWO?.items?.[0];
+      const cardWord = card0?.qr ? (canonical(card0.qr) === canonical({ label: 'Tickets', url: 'https://www.cavehotels.com/whats-on/' }) ? null : 'QR code changed') : 'QR code added';
+      const pageWord = pubWO?.qr ? (canonical(pubWO.qr) === canonical({ label: 'Everything on', url: 'https://www.cavehotels.com/' }) ? null : 'QR link changed') : 'QR link added';
+      const sum = describeChanges(published.bundle, model.draft).summary.filter((x) => x.includes("What's On"));
+      check('The change list names the card QR and the page QR', [cardWord, pageWord].filter(Boolean).every((t) => sum.some((x) => x.includes(t))), sum.join(' | '));
+    }
     model.commit('bad', (d) => { findIn(d, 'whatson').page.items[0].qr.url = 'cavehotels'; });
     check('An invalid card QR address is a blocker, like the page QR', vOf('whatson').blockers.some((b) => b.field === 'items.0.qr.url'));
     model.undo();
@@ -581,6 +728,7 @@ async function run() {
 
     // 8. Move to…
     const ids0 = model.pages().map((e) => e.page.id).sort().join();
+    const beforeMove = clone(model.draft);   // the published content as loaded (cards carry their Builder-only ids)
     const tg = moveTargets(model.draft, 'firepit').map((t) => t.id);
     check('Move targets: Home and pages that can hold pages, never the page itself or anything inside it', tg.includes('home') && tg.includes('golf') && !tg.includes('firepit') && !tg.includes('firepit-menu'), tg.join(','));
     model.commit('Move Room Service', (d) => reparentPage(d, 'roomservice', 'home'));
@@ -589,7 +737,7 @@ async function run() {
     check('The change list says where it moved from and to', describeChanges(published.bundle, model.draft).summary.some((x) => /Room Service: Moved from Eat & Drink to Home/.test(x)));
     check('The published bundle has it on Home and not in Eat & Drink', build().home.children.some((c) => c.id === 'roomservice') && !findIn(build(), 'eat').page.children.some((c) => c.id === 'roomservice'));
     model.undo();
-    check('One undo puts it back where it was', model.find('roomservice').parent.id === 'eat' && canonical(model.draft) === canonical(published.bundle));
+    check('One undo puts it back where it was', model.find('roomservice').parent.id === 'eat' && canonical(model.draft) === canonical(beforeMove) && canonical(build()) === canonical({ ...published.bundle, version: build().version }));
     let refused = 'x';
     model.commit('bad move', (d) => { refused = reparentPage(d, 'eat', 'firepit'); });
     check('A page cannot be moved inside itself', refused === null && model.find('eat').parent.id === 'home');
@@ -633,6 +781,529 @@ async function run() {
       model.undo();
     }
     model.load(published, null);
+  }
+
+  // 10a. One set of link rules, shared with the server (QA-2, QA-3): the same cases run in test_overrides.py.
+  {
+    const rules = await (await fetch('selftest-data/link-rules.json', { cache: 'no-store' })).json();
+    const wrong = rules.cases.filter((c) => validQR(c.text) !== c.qr || validHTTPS(c.text) !== c.override || ('normalised' in c && normaliseLink(c.text) !== c.normalised)
+      || linkProblem(c.text, { https: true }) !== c.problem || linkProblem(c.text) !== c.qrProblem);
+    check(`Link rules: all ${rules.cases.length} shared cases agree with the server's, including the words for what is wrong (Wi-Fi codes, ?query after the host, capitals, spaces, "@", accented letters, invisible characters such as U+0085 and U+001F)`, !wrong.length, wrong.map((c) => JSON.stringify(c.text) + ' → ' + linkProblem(c.text, { https: true })).join(', '));
+    const fx = await (await fetch('selftest-data/overrides-fixture.json', { cache: 'no-store' })).json();
+    const heldF = validateAll(fx.draft);
+    const masterF = buildBundle(fx.draft, { revision: 5, held: heldF }).bundle;
+    const resF = resolveForPublish(fx.draft, { bundle: masterF, frozen: new Set(), published: null, ctx: { rooms: fx.rooms } });
+    check('Shared fixture: the Builder still resolves it to exactly the entries the server is tested with (cards by id, a version\'s card order, Wi-Fi and http QR in versions)',
+      canonical({ entries: resF.entries, draft: resF.live, cards: resF.cards }) === canonical(fx.record) && canonical(masterF) === canonical(fx.master) && !resF.blocked.length && resF.unused.length === 2 && resF.unused.some((u) => /sets this card's QR code itself/.test(u.message)));
+    const prevF = fx.expected.every((c) => canonical(buildBundle(effectiveDoc(fx.draft, c.typeId == null && !c.room ? null : { typeId: c.typeId, room: c.room }), { revision: 5, held: heldF }).bundle) === canonical(c.bundle));
+    const portF = fx.expected.every((c) => canonical(applyEntriesF(fx.master, resF.entries, c.typeId, c.room, resF.cards)) === canonical(c.bundle));
+    check('Shared fixture: Preview as for every room equals the bundle the server is tested to send (QA-1: the Penthouse tea QR on the card its version moved first; QA-9: a room version that only moves cards keeps its type\'s card QR)', prevF && portF, `${prevF} ${portF}`);
+  }
+
+  // 10. Room-specific overrides (hotel server only, 18 Nov 2026). The logic is plain JS, so it is checked here in
+  //     either mode; GitHub mode never shows or publishes them, and a draft without them is exactly as before.
+  {
+    model.load(published, null);
+    const d0 = clone(model.draft);
+    const lists = model.pages().filter((e) => (e.page.items || []).length >= 2);
+    check('Every card gets a Builder-only id on load, the same each time, and none reaches the bundle',
+      lists.length > 0 && lists.every((e) => e.page.items.every((it) => /^card-/.test(it.id))) && (() => { model.load(published, null); return canonical(model.draft) === canonical(d0); })()
+      && !JSON.stringify(buildBundle(model.draft, { revision: 1, held: validateAll(model.draft) }).bundle).includes('"card-'), lists.map((e) => e.page.id).join(','));
+    const L = lists[0].page.id;
+    model.commit('new card', (d) => { findIn(d, L).page.items.push({ title: 'Brand new' }); });
+    check('A card added by an edit gets its own id at once', /^card-/.test(findIn(model.draft, L).page.items.at(-1).id));
+    model.undo();
+
+    const T1 = '3', T2 = '6';
+    const rooms = { types: [{ id: 3, name: 'Cave Room' }, { id: 6, name: 'Penthouse Suite' }], rooms: [{ number: '101', type_id: 3 }, { number: '102', type_id: 3 }, { number: '307', type_id: 6 }] };
+    const fakeApp = { rooms, names: () => ({ typeName: (id) => rooms.types.find((t) => String(t.id) === String(id))?.name || `type ${id}`, roomLabel: (n) => `room ${n}` }) };
+    const names = fakeApp.names();
+    const qrPage = model.pages().find((e) => e.page.qr && e.page.id !== 'home' && e.depth >= 1).page.id;
+    const card = findIn(model.draft, L).page.items[1];
+    const cardKey = cardField(card.id);
+    model.commit('tag', (d) => {
+      setTag(d, qrPage, 'qr', 'room');
+      setValue(d, qrPage, 'qr', '101', { url: 'https://order.example.com/101' });
+      setValue(d, qrPage, 'qr', '102', { url: 'https://order.example.com/102', label: 'Order to 102' });
+      setTag(d, qrPage, 'title', 'type');
+      setValue(d, qrPage, 'title', T1, 'Cave title');
+      setTag(d, L, cardKey, 'type');
+      setValue(d, L, cardKey, T2, { url: 'https://tickets.example.com/' });
+    });
+    check('Tags and values live next to the tree, keyed by page id and field (cards by their id)',
+      model.draft.overrides[qrPage].fields.qr.by === 'room' && model.draft.overrides[L].fields[cardKey].values[T2].url === 'https://tickets.example.com/' && tagOf(model.draft, qrPage, 'title') === 'type', JSON.stringify(model.draft.overrides));
+    const plain = buildBundle(d0, { revision: 9, held: validateAll(d0) }).bundle;
+    const withOv = buildBundle(model.draft, { revision: 9, held: validateAll(model.draft) }).bundle;
+    check('The bundle the TVs read is identical with or without overrides', canonical(plain) === canonical(withOv));
+    check('Untagging says how much would be dropped', dropSummary(model.draft, qrPage, 'qr') === '2 rooms have their own QR code' && dropSummary(model.draft, qrPage, 'title') === '1 room type has its own title', dropSummary(model.draft, qrPage, 'qr'));
+    model.commit('untag', (d) => setTag(d, qrPage, 'title', null));
+    check('Untagging drops the values; Undo brings them back', !tagOf(model.draft, qrPage, 'title') && (model.undo(), getField(model.draft, qrPage, 'title')?.values?.[T1] === 'Cave title'));
+
+    // What one TV sees: room number, then room type, then the master.
+    const masterQR = findIn(model.draft, qrPage).page.qr;
+    const e101 = effectiveDoc(model.draft, { typeId: T1, room: '101' });
+    const e307 = effectiveDoc(model.draft, { typeId: T2, room: '307' });
+    const e999 = effectiveDoc(model.draft, { typeId: '99', room: '999' });
+    check('Preview as: a room gets its own value, else its type\'s, else the master; the master is untouched',
+      findIn(e101, qrPage).page.qr.url === 'https://order.example.com/101' && findIn(e101, qrPage).page.qr.label === masterQR.label && findIn(e101, qrPage).page.title === 'Cave title'
+      && findIn(effectiveDoc(model.draft, { typeId: T1, room: '102' }), qrPage).page.qr.label === 'Order to 102'
+      && findIn(e307, qrPage).page.qr.url === masterQR.url && findIn(e307, L).page.items[1].qr.url === 'https://tickets.example.com/'
+      && canonical(findIn(e999, qrPage).page) === canonical(findIn(model.draft, qrPage).page) && !('overrides' in e101) && findIn(model.draft, qrPage).page.qr.url === masterQR.url);
+
+    // Resolving for publish: what the server compiles must equal what the preview shows, for every room.
+    const v10 = validateAll(model.draft);
+    const b10 = buildBundle(model.draft, { revision: 9, held: v10, published: published.bundle });
+    const res = resolveForPublish(model.draft, { bundle: b10.bundle, frozen: b10.frozen, published: null, ctx: {} });
+    const cardIndex = findIn(model.draft, L).page.items.findIndex((it) => it.id === card.id);
+    check('Resolved entries: page id, field, scope, the bundle path, the card\'s id, and values in the TV\'s shape (a QR without its own line takes the one there)',
+      res.entries.length === 3 && res.entries.find((e) => e.field === cardKey)?.path.join() === `items,${cardIndex},qr` && !('label' in res.entries.find((e) => e.field === 'qr').values['101']) && res.entries.find((e) => e.field === cardKey)?.card === card.id && !res.blocked.length, JSON.stringify(res.entries));
+    const applyEntries = applyEntriesF;
+    const same = (who) => canonical(applyEntries(b10.bundle, res.entries, who.typeId, who.room, res.cards)) === canonical(buildBundle(effectiveDoc(model.draft, who), { revision: 9, held: v10, published: published.bundle }).bundle);
+    check('What the server compiles for each room equals "Preview as" for that room', [{ typeId: T1, room: '101' }, { typeId: T1, room: '102' }, { typeId: T2, room: '307' }, { typeId: '99', room: '5' }].every(same));
+
+    // A card moved: its override follows the card, not the place.
+    model.commit('reorder cards', (d) => { const it = findIn(d, L).page.items; it.unshift(it.splice(cardIndex, 1)[0]); });
+    const b11 = buildBundle(model.draft, { revision: 9, held: validateAll(model.draft) });
+    const res11 = resolveForPublish(model.draft, { bundle: b11.bundle, frozen: b11.frozen });
+    check('A card\'s QR override follows the card when the cards are reordered', res11.entries.find((e) => e.field === cardKey).path.join() === 'items,0,qr');
+    model.undo();
+
+    // A bad value is held back for that room only, naming it; a value published before stays.
+    model.commit('bad link', (d) => { setValue(d, qrPage, 'qr', '102', { url: 'http://order.example.com/102' }); setValue(d, qrPage, 'qr', '101', { url: 'https://order.example.com/101-new' }); });
+    const prev = { entries: res.entries, draft: clone(res.live) };
+    const b12 = buildBundle(model.draft, { revision: 9, held: validateAll(model.draft) });
+    const res12 = resolveForPublish(model.draft, { bundle: b12.bundle, frozen: b12.frozen, published: prev });
+    const q12 = res12.entries.find((e) => e.field === 'qr');
+    check('A link that is not https is held back for that room alone, which keeps what it had; the others go live',
+      res12.blocked.length === 1 && res12.blocked[0].key === '102' && /https/.test(res12.blocked[0].message) && q12.values['102'].url === 'https://order.example.com/102' && q12.values['101'].url === 'https://order.example.com/101-new'
+      && res12.live[qrPage].fields.qr.values['102'].url === 'https://order.example.com/102', JSON.stringify(res12.blocked));
+    const res12b = resolveForPublish(model.draft, { bundle: b12.bundle, frozen: b12.frozen, published: null });
+    check('Never published before: the held-back room uses the master', !('102' in res12b.entries.find((e) => e.field === 'qr').values));
+    const ch12 = describeChanges(published.bundle, model.draft, { overridesBefore: prev.draft, overridesAfter: res12.live, names });
+    check('The change list names override changes in plain words', ch12.summary.some((l) => l.endsWith('For some rooms: QR code: 1 room changed (room 101)')), ch12.summary.filter((l) => /For some rooms/.test(l)).join(' | '));
+    model.undo();
+    // A page held back keeps its published overrides as they were.
+    {
+      const held = new Set([qrPage]);
+      const r = resolveForPublish(model.draft, { bundle: published.bundle, frozen: held, published: { entries: [{ page: qrPage, field: 'qr', by: 'room', path: ['qr'], values: { '307': { label: 'x', url: 'https://old.example.com/' } } }], draft: { [qrPage]: { fields: { qr: { by: 'room', values: { '307': { url: 'https://old.example.com/' } } } } } } } });
+      check('Overrides on a held-back page wait with it: TVs keep the published ones', r.held.includes(qrPage) && r.entries.filter((e) => e.page === qrPage).length === 1 && r.entries.find((e) => e.page === qrPage).values['307'].url === 'https://old.example.com/');
+    }
+
+    // Page versions (stage B): sparse, following the master where they did not change.
+    model.commit('versions', (d) => { setTag(d, 'golf', 'page', 'type'); });
+    const golf0 = clone(findIn(model.draft, 'golf').page);
+    const eff = effectivePage(golf0, {});
+    eff.title = 'Golf for suites'; eff.body = golf0.body;          // the body set to the same text: not a change
+    model.commit('edit version', (d) => setVersionPatch(d, 'golf', T2, diffPatch(golf0, eff)));
+    check('A version keeps only the fields changed in it', canonical(versionPatch(model.draft, 'golf', T2)) === canonical({ title: 'Golf for suites' }), JSON.stringify(versionPatch(model.draft, 'golf', T2)));
+    model.commit('master edit', (d) => { findIn(d, 'golf').page.subtitle = 'Master subtitle, later'; });
+    const vg = findIn(effectiveDoc(model.draft, { typeId: T2 }), 'golf').page;
+    check('A later master edit reaches the version where it did not change; the version\'s own change stays', vg.subtitle === 'Master subtitle, later' && vg.title === 'Golf for suites' && findIn(model.draft, 'golf').page.title === golf0.title);
+    const b13 = buildBundle(model.draft, { revision: 9, held: validateAll(model.draft) });
+    const r13 = resolveForPublish(model.draft, { bundle: b13.bundle, frozen: b13.frozen });
+    check('A version publishes as a sparse patch of the TV\'s fields', canonical(r13.entries.find((e) => e.field === 'page')?.values[T2]) === canonical({ title: 'Golf for suites' }));
+    const back = effectivePage(findIn(model.draft, 'golf').page, versionPatch(model.draft, 'golf', T2));
+    back.title = golf0.title;
+    check('Setting a version field back to the master\'s value makes it follow the master again', !Object.keys(diffPatch(findIn(model.draft, 'golf').page, back)).length);
+    model.commit('empty title', (d) => setVersionPatch(d, 'golf', T2, { title: '' }));
+    const b14 = buildBundle(model.draft, { revision: 9, held: validateAll(model.draft) });
+    const r14 = resolveForPublish(model.draft, { bundle: b14.bundle, frozen: b14.frozen });
+    check('A version with a blocker is held back for that type, with the reason', r14.blocked.some((b) => b.field === 'page' && b.key === T2 && /No title/.test(b.message)) && !r14.entries.some((e) => e.field === 'page'));
+
+    // Two people at once: different rooms both kept; the same room keeps theirs and says so.
+    const base = clone(model.draft);
+    const theirs = clone(base); const mine = clone(base);
+    setValue(theirs, qrPage, 'qr', '101', { url: 'https://theirs.example.com/101' });
+    setValue(theirs, qrPage, 'qr', '307', { url: 'https://theirs.example.com/307' });
+    setValue(mine, qrPage, 'qr', '101', { url: 'https://mine.example.com/101' });
+    setValue(mine, qrPage, 'qr', '102', { url: 'https://mine.example.com/102' });
+    setVersionPatch(mine, 'golf', T1, { body: 'Mine' });
+    const m1 = threeWayMerge(base, theirs, mine, { who: 'Rhys', names });
+    const mv = m1.doc.overrides[qrPage].fields.qr.values;
+    check('Merging two people\'s overrides: different rooms both kept; the same room keeps the colleague\'s, named in plain words',
+      mv['307'].url === 'https://theirs.example.com/307' && mv['102'].url === 'https://mine.example.com/102' && mv['101'].url === 'https://theirs.example.com/101' && m1.doc.overrides.golf.page.versions[T1].body === 'Mine'
+      && m1.conflicts.length === 1 && m1.conflicts[0].includes('QR code › room 101: kept Rhys\'s "https://theirs.example.com/101" instead of yours ("https://mine.example.com/101")'), m1.conflicts.join(' | '));
+    const t2 = clone(base); setTag(t2, qrPage, 'qr', null);
+    const m2 = threeWayMerge(base, t2, mine, { who: 'Rhys', names });
+    check('One makes it the same on every TV while the other fills in a room: theirs is kept and the person is told', !m2.doc.overrides?.[qrPage]?.fields?.qr && m2.conflicts.some((c) => /kept Rhys's choice \(the same on every TV\) instead of yours \(by room number\)/.test(c)), m2.conflicts.join(' | '));
+    const m3 = threeWayMerge(base, base, mine, { who: 'Rhys', names });
+    check('A merge with nothing from the colleague keeps every override of mine', canonical(m3.doc.overrides) === canonical(mine.overrides) && !m3.conflicts.length);
+
+    // Reset on the server: the live overrides come back onto a draft rebuilt from the bundle (cards matched by place).
+    const pubRec = { entries: [{ page: L, field: cardField('card-old1'), by: 'type', path: ['items', 1, 'qr'], values: { [T2]: { label: '', url: 'https://t.example.com/' } } }],
+      draft: { [L]: { fields: { [cardField('card-old1')]: { by: 'type', values: { [T2]: { url: 'https://t.example.com/' } } } } } } };
+    model.load({ ...published, overrides: pubRec }, null);
+    const newId = findIn(model.draft, L).page.items[1].id;
+    check('A draft started from what is live gets the live overrides, card ids matched by the card\'s place', getField(model.draft, L, cardField(newId))?.values?.[T2]?.url === 'https://t.example.com/', JSON.stringify(model.draft.overrides));
+    model.load(published, null);
+    check('Without overrides (GitHub mode) the draft has none and Reset leaves none', !model.draft.overrides && (model.reset(), !model.draft.overrides));
+
+    // Paste a list.
+    model.commit('tag for paste', (d) => setTag(d, qrPage, 'qr', 'room'));
+    const recP = getField(model.draft, qrPage, 'qr');
+    const pl = parseList(fakeApp, { pageId: qrPage, field: 'qr' }, fieldDef('qr'), recP, 'Room\tLink\n101\thttps://o.example.com/101\n102, https://o.example.com/102\n1O1\thttps://x.example.com/\n307\thttp://o.example.com/307\n308\n101\thttps://o.example.com/again');
+    check('Paste a list: a heading is skipped; tab, comma and space columns read; unknown rooms, bad links, missing values and repeats reported by line',
+      pl.matched.map((m) => m.key).join() === '101,102' && pl.unmatched.length === 4 && pl.unmatched.map((u) => u.line).join() === '4,5,6,7' && /no room 1O1/.test(pl.unmatched[0].why) && /https/.test(pl.unmatched[1].why) && /already on line 2/.test(pl.unmatched[3].why), JSON.stringify(pl));
+    // QA-4: "room 307" with spaces, "Room-102", three columns; the second column is the value and the rest is ignored, and said.
+    const pl2 = parseList(fakeApp, { pageId: qrPage, field: 'qr' }, fieldDef('qr'), recP, 'room 307 https://o.example.com/307 Order now\nRoom-102\thttps://o.example.com/102b\tOrder from 102\nRm 101, https://o.example.com/101x, Order');
+    check('Paste a list (QA-4): "room 307", "Room-102" and "Rm 101" read as rooms; only the second column is the link; extra columns are ignored and reported',
+      pl2.matched.map((m) => `${m.key}=${m.value.url}`).join() === '307=https://o.example.com/307,102=https://o.example.com/102b,101=https://o.example.com/101x' && pl2.extra.join() === '1,2,3' && !pl2.unmatched.length, JSON.stringify(pl2));
+    model.commit('tag title by type', (d) => setTag(d, qrPage, 'title', 'type'));
+    const pl3 = parseList(fakeApp, { pageId: qrPage, field: 'title' }, fieldDef('title'), getField(model.draft, qrPage, 'title'), 'Cave Room\tA title\n3, Another\nPenthouse Suite Words, with spaces');
+    check('Paste a list by room type matches type names (never their numbers); words keep their spaces and commas',
+      pl3.matched.map((m) => `${m.label}=${m.value}`).join('|') === 'Cave Room=A title|Penthouse Suite=Words, with spaces' && pl3.unmatched.length === 1 && /no room type called "3"/.test(pl3.unmatched[0].why), JSON.stringify(pl3));
+    model.load(published, null);
+  }
+
+
+  // 9. The better gallery (phase B, GALLERY-CONTRACT.md).
+  {
+    // Worked out from a copy of what is published with The Course as a plain photo gallery, so these
+    // checks pass on any revision, including one that already uses the new gallery fields.
+    const pub0 = clone(published);
+    { const g = findIn(pub0.bundle, 'golf-gallery').page; const stills = (g.slides || []).length ? g.slides.map((x) => x.image || x.poster).filter(Boolean) : g.images; for (const k of ['slides', 'gallery', 'body', 'qr']) delete g[k]; g.images = stills; }
+    const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+    const A = 'media/aaaaaaaaaaaa-1920.jpg', B = 'media/bbbbbbbbbbbb-1920.jpg', C = 'media/cccccccccccc-1920.jpg', D = 'media/dddddddddddd-1920.jpg', SMALL = 'media/999999999999-1920.jpg';
+    const LOOP = 'media/111111111111-1080.mp4', LOUD = 'media/222222222222-1080.mp4', MUTE = 'media/333333333333-1080.mp4';
+    const sizes = { [A]: { width: 1920, height: 1080 }, [B]: { width: 1920, height: 1080 }, [C]: { width: 1920, height: 1080 }, [D]: { width: 1920, height: 1080 }, [SMALL]: { width: 1000, height: 700 } };
+    const films = { [LOOP]: { name: 'Loop', width: 1920, height: 1080, seconds: 12, audio: false, silent: false, bytes: 5e6 }, [LOUD]: { name: 'Flyover', width: 1920, height: 1080, seconds: 48, audio: true, silent: false, bytes: 30e6 }, [MUTE]: { name: 'Mute', width: 1920, height: 1080, seconds: 20, audio: false, silent: false, bytes: 5e6 } };
+    const gctx = { imageSize: (x) => sizes[x] || null, imageKnown: () => true, filmInfo: (x) => films[x] || null };
+    const course = () => findIn(model.draft, 'golf-gallery').page;
+    const out = () => findIn(buildBundle(model.draft, { revision: 99, held: validateAll(model.draft, gctx) }).bundle, 'golf-gallery')?.page;
+    const vg = () => validateAll(model.draft, gctx).get('golf-gallery');
+    const FRAMES = [
+      { image: A, group: 'Hole 1', caption: 'Par 4, 412 yards. A generous opening drive' },
+      { film: LOUD, poster: B, group: 'Hole 1', caption: 'From the air', sound: true },
+      { image: C, group: 'Hole 2', caption: 'Par 3, 176 yards', fit: 'whole' },
+      { film: LOOP, poster: D, group: 'Hole 2' },
+    ];
+    model.load(pub0, null);
+    model.commit('The Course, hole by hole', (d) => { const g = findIn(d, 'golf-gallery').page; setFrames(g, clone(FRAMES)); setOptions(g, { style: 'thumbnails', seconds: 12, autoplay: true }); g.body = 'Kent parkland, hole by hole.'; g.qr = { label: 'Book a tee time', url: 'https://www.cavehotels.com/golf/' }; });
+    const g1 = out();
+    check('Gallery: every new field is pub0 exactly per the contract (slides with caption, group, fit, sound; gallery; body; qr)',
+      canonical(g1.slides) === canonical(FRAMES) && canonical(g1.gallery) === canonical({ style: 'thumbnails', seconds: 12, autoplay: true }) && g1.body === 'Kent parkland, hole by hole.' && g1.qr?.label === 'Book a tee time', JSON.stringify(g1).slice(0, 400));
+    check('Gallery: `images` keeps every frame\'s still, in order, for apps before build 8', canonical(g1.images) === canonical([A, B, C, D]));
+    check('Gallery: slide keys come out in contract order; fit "fill" and sound on a photo are never written', Object.keys(g1.slides[1]).join() === 'film,poster,caption,group,sound' && Object.keys(g1.slides[2]).join() === 'image,caption,group,fit' && !('sound' in g1.slides[3]) && !('fit' in g1.slides[0]));
+    check('Gallery: `gallery` comes last in the page, after the stage-2 keys', Object.keys(g1).slice(-1)[0] === 'gallery');
+    check('Gallery with every new field has no blockers', !vg().blockers.length, vg().blockers.map((b) => b.message).join('; '));
+    { const again = clone(pub0); again.bundle = buildBundle(model.draft, { revision: 99, held: validateAll(model.draft, gctx) }).bundle; model.load(again, null);
+      const rt = buildBundle(model.draft, { revision: 99, held: validateAll(model.draft, gctx) }).bundle;
+      check('Gallery: a bundle with every new field round-trips through the editor model exactly', canonical(rt) === canonical(again.bundle)); }
+    model.load(pub0, null);
+    // Defaults, clamps, tidying.
+    check('Gallery options read as the TV reads them: unknown style is Thumbnails, seconds clamped 4–20 (8 when missing), autoplay only when true',
+      canonical(galleryOptions({ gallery: { style: 'carousel', seconds: 99, autoplay: 'yes' } })) === canonical({ style: 'thumbnails', seconds: 20, autoplay: false }) && galleryOptions({ gallery: { seconds: 1 } }).seconds === 4 && galleryOptions({}).seconds === 8 && galleryOptions({ gallery: { seconds: 'x' } }).seconds === 8);
+    check('Gallery options: seconds that are not a number (null, empty, true, "12") read as 8, not 4 (reviewer)', [null, '', true, '12', NaN].every((x) => galleryOptions({ gallery: { seconds: x } }).seconds === 8));
+    model.commit('defaults', (d) => { const g = findIn(d, 'golf-gallery').page; g.gallery = { style: 'thumbnails', seconds: 8, autoplay: false }; });
+    check('Gallery: the default settings (Thumbnails, 8 s, off) are left out, so an untouched gallery is byte for byte as before', !('gallery' in out()) && canonical(out()) === canonical(findIn(pub0.bundle, 'golf-gallery').page));
+    model.commit('clamp', (d) => { findIn(d, 'golf-gallery').page.gallery = { style: 'slideshow', seconds: 30 }; });
+    check('Gallery: seconds out of range are clamped when pub0', canonical(out().gallery) === canonical({ style: 'slideshow', seconds: 20, autoplay: false }));
+    model.load(pub0, null);
+    model.commit('captions only', (d) => { const g = findIn(d, 'golf-gallery').page; setFrames(g, g.images.map((image, i) => ({ image, ...(i === 0 ? { caption: '  The first tee  ', group: '  Hole   1 ' } : {}) }))); });
+    const g2 = out();
+    check('Gallery: a photo with a caption needs `slides`; captions and chapter names are trimmed, spaces made single', Array.isArray(g2.slides) && g2.slides[0].caption === 'The first tee' && g2.slides[0].group === 'Hole 1' && canonical(g2.images) === canonical(findIn(pub0.bundle, 'golf-gallery').page.images));
+    model.commit('two spellings', (d) => { const g = findIn(d, 'golf-gallery').page; g.slides[1].group = 'HOLE 1'; });
+    check('Gallery: one spelling per chapter is published (the first used), as the TV compares chapter names exactly', out().slides[1].group === 'Hole 1');
+    model.undo();
+    model.commit('blank', (d) => { const g = findIn(d, 'golf-gallery').page; g.slides[0].caption = '   '; g.slides[0].group = ' '; });
+    check('Gallery: blank captions and chapters are left out, and plain photos go back to plain `images`', !('slides' in out()) && canonical(out()) === canonical(findIn(pub0.bundle, 'golf-gallery').page));
+    model.load(pub0, null);
+    {
+      const fin = { id: 'fin-g', type: 'finished', title: 'Plan', description: 'A plan', image: A, slides: [{ image: A, caption: 'x', group: 'y', fit: 'whole' }, { film: LOUD, poster: B, sound: true }] };
+      model.commit('finished with gallery fields', (d) => addPage(d, 'golf', fin));
+      const fo = findIn(buildBundle(model.draft, { revision: 99, held: new Map() }).bundle, 'fin-g').page;
+      check('Finished pages never get the gallery\'s slide fields', canonical(fo.slides) === canonical([{ image: A }, { film: LOUD, poster: B }]) && !('gallery' in fo));
+      model.load(pub0, null);
+    }
+    // Limits and blockers.
+    const withFrames = (frames, extra = {}) => { model.load(pub0, null); model.commit('frames', (d) => { const g = findIn(d, 'golf-gallery').page; setFrames(g, clone(frames)); Object.assign(g, extra); }); return vg(); };
+    let v = withFrames([{ image: A, caption: 'x'.repeat(81) }]);
+    check('Gallery: a caption over 80 characters is a blocker on that frame', v.blockers.some((b) => b.field === 'images.0.caption' && /80/.test(b.message)) && !withFrames([{ image: A, caption: 'x'.repeat(80) }]).blockers.length);
+    v = withFrames([{ image: A, group: 'x'.repeat(25) }]);
+    check('Gallery: a chapter name over 24 characters is a blocker', v.blockers.some((b) => b.field === 'images.0.group' && /24/.test(b.message)) && !withFrames([{ image: A, group: 'x'.repeat(24) }]).blockers.length);
+    v = withFrames([{ image: A }, { image: B, group: 'y'.repeat(24) }, { image: C, group: 'y'.repeat(24) }, { image: D, group: 'y'.repeat(24) }, { image: A, group: 'y'.repeat(24) }]);
+    check('QA-10: a chapter name at its limit on four frames gives one warning, on its first frame', v.warnings.filter((w) => /Chapter name/.test(w.message)).length === 1 && v.warnings.some((w) => w.field === 'images.1.group'), v.warnings.map((w) => w.message).join(' | '));
+    v = withFrames([{ image: A }], { body: 'x'.repeat(161) });
+    check('Gallery: an intro over 160 characters is a blocker that names the page and the count (other pages keep their 500)', v.blockers.some((b) => b.field === 'body' && /The intro is 161 characters; a gallery's intro can be 160.*"The Course"/.test(b.message)) && !withFrames([{ image: A }], { body: 'x'.repeat(160) }).blockers.length, v.blockers.map((b) => b.message).join(' | '));
+    v = withFrames([{ image: A }], { qr: { label: 'Book', url: 'not a link' } });
+    check('Gallery: an invalid QR address is a blocker, as on other pages', v.blockers.some((b) => b.field === 'qr.url'));
+    check('Gallery: up to 60 frames (a course hole by hole); 61 is a blocker', LIMITS.galleryMax === 60 && !withFrames(Array.from({ length: 60 }, () => ({ image: A }))).blockers.length && withFrames(Array.from({ length: 61 }, () => ({ image: A }))).blockers.some((b) => b.field === 'images' && /61/.test(b.message)));
+    v = withFrames([{ film: LOUD, poster: B }]);
+    check('Gallery: a silent loop with a sound track is a blocker that offers "Plays with sound"', v.blockers.some((b) => b.field === 'images.0.sound' && /Plays with sound/.test(b.message)));
+    v = withFrames([{ film: LOUD, poster: B, sound: true }]);
+    check('Gallery: the same film set to play with sound has no blocker', !v.blockers.length, v.blockers.map((b) => b.message).join('; '));
+    v = withFrames([{ film: MUTE, poster: B, sound: true }]);
+    check('Gallery: "plays with sound" on a film with no sound track is a warning, not a blocker', !v.blockers.length && v.warnings.some((w) => w.field === 'images.0.sound' && /no sound track/.test(w.message)));
+    v = withFrames([{ film: LOUD, sound: true }]);
+    check('Gallery: a film with sound still needs a poster', v.blockers.some((b) => /poster/.test(b.message)));
+    v = withFrames([{ image: SMALL }]);
+    const vWhole = withFrames([{ image: SMALL, fit: 'whole' }]);
+    check('Gallery: a 1000 px photo is too small to fill the TV but fine shown whole', v.blockers.some((b) => /too small/.test(b.message)) && !vWhole.blockers.length);
+    v = withFrames([{ image: A, group: 'Hole 1' }, { image: B }, { image: C, group: 'Hole 2' }]);
+    check('Gallery: frames with no chapter in a gallery with chapters are a warning', v.warnings.some((w) => /Frame 2 has no chapter/.test(w.message)) && !v.blockers.length);
+    v = withFrames([{ image: A, group: 'Hole 1' }, { image: B, group: 'Hole 2' }, { image: C, group: 'hole 1' }]);
+    check('Gallery: a chapter split in two is a warning (the TV would show two chapters)', v.warnings.some((w) => /"Hole 1".*two chapters/.test(w.message)));
+    model.load(pub0, null);
+    // Chapters.
+    const ord = orderByChapter([{ image: A, group: 'Hole 1' }, { image: B, group: 'Hole 2' }, { image: C, group: 'hole 1' }, { image: D }]);
+    check('Chapters: frames grouped by chapter in the order chapters first appear (case and spacing ignored)', ord.map((f) => f.image).join() === [A, C, B, D].join());
+    {
+      // QA-3: Hole 3 loses its chapter; the clubhouse frames with no chapter at the end must stay at the end.
+      const fr = [{ image: 'h1' , group: 'Hole 1' }, { image: 'h3a', group: 'Hole 3' }, { image: 'h3b', group: 'Hole 3' }, { image: 'h4', group: 'Hole 4' }, { image: 'club1' }, { image: 'club2' }];
+      for (const x of fr) if (x.group === 'Hole 3') delete x.group;
+      const o2 = orderByChapter(fr).map((f) => f.image).join();
+      check('QA-3: taking a chapter away moves nothing else (frames with no chapter stay where they are)', o2 === 'h1,h3a,h3b,h4,club1,club2', o2);
+      const o3 = orderByChapter([{ image: 'x' }, { image: 'a', group: 'A' }, { image: 'y' }, { image: 'b', group: 'B' }, { image: 'a2', group: 'a' }]).map((f) => f.image).join();
+      check('QA-3: frames with a chapter are still gathered at their chapter; the others keep their order and place', o3 === 'x,a,a2,y,b', o3);
+    }
+    check('Chapters: the runs and the counter read "Hole 2 · 1 of 2"; with no chapters "3 of 4"', chapterRuns(ord).map((r) => `${r.name}:${r.count}`).join() === 'Hole 1:2,Hole 2:1,:1'
+      && frameCount([{ group: 'Hole 1' }, { group: 'Hole 2' }, { group: 'Hole 2' }], 1).chapter === 'Hole 2' && frameCount([{ group: 'Hole 1' }, { group: 'Hole 2' }, { group: 'Hole 2' }], 1).text === '1 of 2' && frameCount([{}, {}, {}, {}], 2).text === '3 of 4');
+    check('Chapters: a typed name takes the spelling of a chapter already used', matchChapter([{ group: 'Hole 7' }], ' hole  7 ') === 'Hole 7' && matchChapter([{ group: 'Hole 7' }], 'Hole 8') === 'Hole 8' && matchChapter([], '  ') === '');
+    check('Paste captions: one per line, an empty line holds its place, trailing empty lines dropped, "chapter<tab>caption" sets the chapter',
+      canonical(parseCaptions('One\n\nHole 2\tTwo \r\nThree\n\n\n')) === canonical([{ caption: 'One', chapter: null }, { caption: '', chapter: null }, { caption: 'Two', chapter: 'Hole 2' }, { caption: 'Three', chapter: null }]));
+    // Change lines.
+    {
+      const pub = clone(pub0); const pg = findIn(pub.bundle, 'golf-gallery').page;
+      pg.images = Array.from({ length: 12 }, (_, i) => `media/${String(i).padStart(2, '0')}aaaaaaaaaa-1920.jpg`);
+      model.load(pub, null);
+      model.commit('captions', (d) => { const g = findIn(d, 'golf-gallery').page; setFrames(g, g.images.map((image, i) => ({ image, caption: `Caption ${i + 1}`, group: `Hole ${Math.floor(i / 2) + 1}` }))); });
+      const lines = describeChanges(pub.bundle, model.draft).summary.filter((x) => /The Course/.test(x));
+      check('Change list: "The Course: 12 captions added" and the chapters added', lines.some((x) => /The Course: 12 captions added$/.test(x)) && lines.some((x) => /The Course: Chapters added: Hole 1, Hole 2, Hole 3 and 3 more$/.test(x)) && !lines.some((x) => /Gallery: now/.test(x)), lines.join(' | '));
+      const base2 = clone(pub); base2.bundle = buildBundle(model.draft, { revision: 99, held: new Map() }).bundle;
+      model.load(base2, null);
+      model.commit('more', (d) => { const g = findIn(d, 'golf-gallery').page; const fr = clone(g.slides); fr[0].caption = 'Changed'; delete fr[1].caption; fr[2].fit = 'whole'; fr[11].group = 'Hole 1'; setFrames(g, orderByChapter(fr)); setOptions(g, { style: 'slideshow', seconds: 12 }); g.body = 'An intro'; });
+      const l2 = describeChanges(base2.bundle, model.draft).summary.filter((x) => /The Course/.test(x));
+      check('Change list: captions changed and removed, show whole, a frame to another chapter, style, seconds, intro',
+        ['1 caption changed', '1 caption removed', '1 frame now shows the whole image', '1 frame moved to another chapter', 'Gallery style: Thumbnails → Slideshow', 'Seconds per frame: 8 → 12', 'Intro added'].every((t) => l2.some((x) => x.endsWith(t))), l2.join(' | '));
+      model.load(pub0, null);
+      model.commit('sound', (d) => { const g = findIn(d, 'golf-gallery').page; setFrames(g, [{ film: LOOP, poster: A }]); });
+      const base3 = clone(pub0); base3.bundle = buildBundle(model.draft, { revision: 99, held: new Map() }).bundle;
+      model.load(base3, null);
+      model.commit('sound on', (d) => { const g = findIn(d, 'golf-gallery').page; g.slides[0].sound = true; setOptions(g, { autoplay: true }); });
+      const l3 = describeChanges(base3.bundle, model.draft).summary.filter((x) => /The Course/.test(x));
+      check('Change list: "A film now plays with sound" and "Plays by itself"', l3.some((x) => x.endsWith('A film now plays with sound')) && l3.some((x) => /Plays by itself/.test(x)), l3.join(' | '));
+      model.load(pub0, null);
+      model.commit('new whole and sound frames', (d) => { const g = findIn(d, 'golf-gallery').page; setFrames(g, [...g.images.map((image) => ({ image })), { image: A, fit: 'whole' }, { image: C, fit: 'whole' }, { film: LOUD, poster: B, sound: true }]); });
+      const l4 = describeChanges(pub0.bundle, model.draft).summary.filter((x) => /The Course/.test(x));
+      check('QA-9: new frames shown whole and a new film with sound are named in the change list', l4.some((x) => x.endsWith('2 frames now show the whole image')) && l4.some((x) => x.endsWith('A film now plays with sound')), l4.join(' | '));
+      model.load(pub0, null);
+    }
+    // Merge.
+    {
+      const base = clone(pub0.bundle);
+      const bg = findIn(base, 'golf-gallery').page;
+      const stills = [...bg.images];
+      const theirs = clone(base); const tg = findIn(theirs, 'golf-gallery').page;
+      setFrames(tg, [...stills.map((image, i) => ({ image, ...(i === 0 ? { caption: 'Theirs first' } : {}) })), { image: D }]);
+      const mine = clone(base); const mg = findIn(mine, 'golf-gallery').page;
+      setFrames(mg, stills.map((image, i) => ({ image, ...(i > 0 ? { group: `Hole ${i}` } : {}), ...(i === 2 ? { caption: 'Mine third' } : {}) })));
+      setOptions(mg, { autoplay: true });
+      const r = threeWayMerge(base, theirs, mine, { who: 'Rhys' });
+      const mgd = findIn(r.doc, 'golf-gallery').page;
+      const fr = mgd.slides || [];
+      check('Merge: their caption and new photo and my chapters, caption and settings are all kept',
+        fr.length === stills.length + 1 && fr.some((f) => f.caption === 'Theirs first') && fr.some((f) => f.caption === 'Mine third' && f.group === 'Hole 2') && fr.some((f) => f.image === D) && mgd.gallery?.autoplay === true && !r.conflicts.length, JSON.stringify(mgd).slice(0, 500) + ' ' + r.conflicts.join(' | '));
+      check('Merge: `images` still lists every frame\'s still in the frames\' order, chapters together', canonical(mgd.images) === canonical(fr.map((f) => f.image || f.poster)) && chapterRuns(fr).filter((x) => x.key).length === new Set(fr.map((f) => f.group).filter(Boolean)).size);
+      const mine2 = clone(base); setFrames(findIn(mine2, 'golf-gallery').page, stills.map((image, i) => ({ image, ...(i === 0 ? { caption: 'Mine first' } : {}) })));
+      const r2 = threeWayMerge(base, theirs, mine2, { who: 'Rhys' });
+      check('Merge: the same caption changed on both sides keeps the colleague\'s and says so', (findIn(r2.doc, 'golf-gallery').page.slides || []).some((f) => f.caption === 'Theirs first') && r2.conflicts.some((c) => /Rhys's caption/.test(c) && /Mine first/.test(c)), r2.conflicts.join(' | '));
+      const odd = { type: 'gallery', images: [A, B], slides: [{ image: B, caption: 'b' }, { film: LOOP, poster: A, group: 'G' }, { image: C, caption: 'gone' }] };
+      reconcileFrames(odd);
+      check('Merge: frames are rebuilt from `images` (which frames, in order) and `slides` (what each carries)', canonical(odd.slides) === canonical([{ film: LOOP, poster: A, group: 'G' }, { image: B, caption: 'b' }]) && canonical(odd.images) === canonical([A, B]));
+    }
+    // Page versions (room overrides) carry the new fields.
+    {
+      const master = clone(findIn(pub0.bundle, 'golf-gallery').page);
+      const eff = clone(master); setFrames(eff, eff.images.map((image, i) => ({ image, caption: `Penthouse ${i + 1}` }))); setOptions(eff, { style: 'slideshow' }); eff.body = 'Only in the Penthouse'; eff.qr = { label: 'Book', url: 'https://www.cavehotels.com/golf/' };
+      const patch = diffPatch(master, eff);
+      check('Page versions: a version keeps the gallery fields it changes (gallery, slides, body, qr) as a sparse patch', ['gallery', 'slides', 'body', 'qr'].every((k) => k in patch) && !('images' in patch) && canonical(effectivePage(master, patch).gallery) === canonical({ style: 'slideshow', seconds: 8, autoplay: false }));
+      model.load(pub0, null);
+      const T = '7';
+      model.commit('version', (d) => { setTag(d, 'golf-gallery', 'page', 'type'); setVersionPatch(d, 'golf-gallery', T, patch); });
+      const { bundle: bv, frozen: fv } = buildBundle(model.draft, { held: validateAll(model.draft, gctx), pub0: pub0.bundle });
+      const rv = resolveForPublish(model.draft, { bundle: bv, frozen: fv, pub0: null, ctx: { ...gctx, names: { typeName: () => 'Penthouse Suite', roomLabel: (n) => `room ${n}` }, rooms: [] } });
+      const ev = rv.entries.find((e) => e.page === 'golf-gallery' && e.field === 'page');
+      check('Page versions: what is pub0 for the room type carries the slides, the gallery settings, the intro and the QR', !!ev && canonical(ev.values[T].gallery) === canonical({ style: 'slideshow', seconds: 8, autoplay: false }) && ev.values[T].slides?.[0]?.caption === 'Penthouse 1' && ev.values[T].body === 'Only in the Penthouse', JSON.stringify(ev || rv).slice(0, 300));
+      const asType = applyEntriesF(bv, rv.entries, T, null);
+      check('Page versions: the room type\'s TVs get those fields; every other TV gets the master', findIn(asType, 'golf-gallery').page.gallery?.style === 'slideshow' && !('gallery' in findIn(applyEntriesF(bv, rv.entries, '8', null), 'golf-gallery').page));
+      check('Older-app warning: a gallery that uses the new fields only in a page version is still named', /The Course \(captions, the slideshow, the intro, the QR code\)/.test(olderAppWarning(bv, rv, { minimum: 8, tvs: [{ room: '307', location: 'Bedroom', app_build: null, unknown: true }] })), olderAppWarning(bv, rv, { minimum: 8, tvs: [{ room: '307', location: 'Bedroom', unknown: true }] }));
+      model.load(pub0, null);
+    }
+    // The older-app warning (hotel server; the server lists the TVs).
+    {
+      const b = clone(pub0.bundle); const gp = findIn(b, 'golf-gallery').page;
+      const tvs = [{ room: '101', location: 'Bedroom', app_build: '7', unknown: false }, { room: '', name: 'Spare', address: '192.0.2.4', app_build: null, unknown: true }];
+      check('Older-app warning: nothing when no gallery uses the new fields, or no TV has an older app', olderAppWarning(b, null, { minimum: 8, tvs }) === '' && newGalleryFeatures(gp).length === 0);
+      setFrames(gp, gp.images.map((image, i) => ({ image, ...(i === 0 ? { caption: 'x', group: 'Hole 1' } : {}) })));
+      const w = olderAppWarning(b, null, { minimum: 8, tvs });
+      check('Older-app warning: names the gallery and what it uses, each TV and its app, and says it does not stop publishing',
+        /The Course \(captions, chapters\)/.test(w) && /room 101 Bedroom \(app 7\)/.test(w) && /Spare \(app not reported\)/.test(w) && /older than build 8/.test(w) && /does not stop publishing/.test(w), w);
+      check('Older-app warning: nothing when every TV is on build 8 or later', olderAppWarning(b, null, { minimum: 8, tvs: [] }) === '');
+    }
+    // Presets.
+    {
+      const hb = newPage('gallery:hole-by-hole', 'The Course', 'course-x1');
+      const ph = newPage('gallery:photo', 'Rooms', 'rooms-x1');
+      const ch = pageChoices(['info', 'gallery', 'list']).map((c) => c.key);
+      check('Presets: "Photo gallery" and "Hole by hole" are offered in place of the plain gallery', ch.join() === 'info,gallery:photo,gallery:hole-by-hole,list', ch.join());
+      check('Presets: both start as Thumbnails that play by themselves, with a QR line waiting for its address and no example intro or small caps line (QA-5); a plain gallery is as before',
+        hb.type === 'gallery' && canonical(galleryOptions(hb)) === canonical({ style: 'thumbnails', seconds: 8, autoplay: true }) && !hb.body && !hb.kicker && hb.qr?.label === 'Book a tee time' && hb.qr.url === '' && ph.type === 'gallery' && galleryOptions(ph).autoplay === true && !ph.body && !('gallery' in newPage('gallery', 'G', 'g-1')) && GALLERY_PRESETS['hole-by-hole'].label === 'Hole by hole');
+      const vp = validatePage({ ...hb, image: A }, { imageSize: (x) => sizes[x] || null, isStrip: false });
+      check('QA-5: a preset page cannot go live with a placeholder QR: its only blocker is the missing address', vp.blockers.length === 1 && vp.blockers[0].field === 'qr.url' && /no web address/.test(vp.blockers[0].message), vp.blockers.map((x) => x.message).join('; '));
+      const vq = validatePage({ ...hb, image: A, qr: { label: 'Book a tee time', url: 'https://www.cavehotels.com/golf/' } }, { imageSize: (x) => sizes[x] || null, isStrip: false });
+      check('QA-5: with its address filled in, a preset page has no blockers', !vq.blockers.length, vq.blockers.map((x) => x.message).join('; '));
+      // Example words on any new page (build 7 QA-2): a warning per field, and a line on Publish.
+      const info = newPage('info', 'Venue', 'venue-x1');
+      const vi = validatePage({ ...info, image: A }, { imageSize: (x) => sizes[x] || null, isStrip: false });
+      const ex = vi.warnings.filter((w) => /still the example text/.test(w.message)).map((w) => w.field);
+      check('Example text: a new Venue page\'s small caps line, subtitle, text and facts are each flagged until replaced', ['kicker', 'subtitle', 'body', 'facts.0', 'facts.1'].every((f) => ex.includes(f)) && !vi.blockers.length, ex.join());
+      const pubEx = clone(pub0); findIn(pubEx.bundle, 'golf').page.kicker = 'A short line above the title';
+      model.load(pubEx, null);
+      check('Example text: a live page carrying "A short line above the title" is warned about (not held back)', validateAll(model.draft, { imageSize: () => null }).get('golf').warnings.some((w) => w.field === 'kicker' && /example text/.test(w.message)) && !validateAll(model.draft, { imageSize: () => null }).get('golf').held);
+      model.load(pub0, null);
+    }
+    // The preview: leaf, slideshow style, viewer.
+    {
+      const layoutG = { width: 1600, contentWidth: 1456, showsChildren: true, fallbackKicker: null };
+      const media = { url: () => null, film: (x) => films[x] || null };
+      const page = { id: 'gp', type: 'gallery', title: 'The Course', kicker: 'Golf', body: 'Kent parkland.', qr: { label: 'Book a tee time', url: 'https://www.cavehotels.com/golf/' }, images: [A, B, C, D], slides: clone(FRAMES) };
+      const n = renderPage(page, { hotel: {}, layout: layoutG, media, galleryIndex: 0 }).node;
+      check('Preview: chapter row (one name per chapter), thumbnails, intro and QR card above them (not a stop)',
+        [...n.querySelectorAll('.tv-chip')].map((c) => c.textContent).join() === 'Hole 1,Hole 2' && n.querySelectorAll('.tv-thumb').length === 4 && n.querySelector('.tv-gintro')?.textContent === 'Kent parkland.' && !!n.querySelector('.tv-gqr svg') && !n.querySelector('.tv-gqr[data-stop]'));
+      check('Preview: the caption and the counter "Hole 1 · 2 of 2 · Film with sound" (the TV\'s words) for each frame', n.querySelector('.tv-gcaption[data-photo="1"]')?.textContent === 'From the air' && n.querySelector('.tv-gcount[data-photo="1"]')?.textContent === 'Hole 1 · 2 of 2 · Film with sound' && n.querySelector('.tv-gcount.on')?.textContent === 'Hole 1 · 1 of 2');
+      check('Preview: a film with sound has a play mark, a loop its "loops silently" label, "show whole" is never cropped', !!n.querySelector('.tv-gphoto[data-photo="1"] .tv-gplay') && !!n.querySelector('.tv-gphoto[data-photo="3"] .tv-gfilm') && n.querySelector('.tv-gphoto[data-photo="2"]').classList.contains('whole') && !!n.querySelector('.tv-thumb .tv-film-mark.sound'));
+      const ns = renderPage({ ...page, gallery: { style: 'slideshow', seconds: 5 } }, { hotel: {}, layout: layoutG, media, galleryIndex: 2 }).node;
+      check('Preview: Slideshow style has no thumbnails or chapter row; the frame is one stop, with dots and the bar and no words while turning (as the TV)', !ns.querySelector('.tv-thumb') && !ns.querySelector('.tv-chip') && ns.querySelectorAll('[data-stop]').length === 1 && !!ns.querySelector('[data-stop="gframe"][data-entry]') && ns.querySelectorAll('.tv-gdots i').length === 4 && ns.querySelector('.tv-gdots i.on')?.dataset.photo === '2' && ns.querySelector('.tv-gnext').textContent === '' && !!ns.querySelector('.tv-gbar'));
+      const nv = renderGalleryViewer(page, { hotel: {}, layout: layoutG, media, galleryIndex: 1, viewer: { strip: true } });
+      check('Preview: the viewer shows the chapter as a gold kicker, the caption, "Select to play with sound", and a strip with chapter names; no intro or QR',
+        nv.querySelector('.tv-vcap-one.on .tv-kicker')?.textContent === 'HOLE 1' && nv.querySelector('.tv-vcap-one.on .tv-vcaption')?.textContent === 'From the air' && /Select to play with sound/.test(nv.querySelector('.tv-vcap-one.on .tv-gcount').textContent)
+        && [...nv.querySelectorAll('.tv-grp')].map((x) => x.textContent).join() === 'HOLE 1,HOLE 2' && nv.classList.contains('strip') && !nv.querySelector('.tv-gqr') && !nv.querySelector('.tv-gintro'));
+    }
+    // The remote walk (SPEC 5.3), with the clocks shortened.
+    {
+      const host = document.createElement('div');
+      host.style.cssText = 'position:absolute;left:-6000px;top:0;width:960px';
+      document.body.append(host);
+      const doc = clone(pub0.bundle);
+      const gp = findIn(doc, 'golf-gallery').page;
+      setFrames(gp, clone(FRAMES)); gp.body = 'Kent parkland.'; gp.qr = { label: 'Book', url: 'https://www.cavehotels.com/golf/' };
+      setOptions(gp, { autoplay: true, seconds: 5 });
+      const pv = new TVPreview(host, { media: { url: () => null, film: (x) => films[x] || null }, logoURL: '' });
+      Object.assign(pv.timing, { idleBeforeAutoplay: 150, hold: 200, viewerFade: 150, mark: 100, secondsScale: 0.02 });
+      pv.setDoc(doc);
+      pv.setMode('remote');
+      pv.showPage('golf-gallery');
+      pv.focusEntry();
+      const at = () => `${pv.nav.focus}:${pv.nav.stop}:${pv.galleryIndex}${pv.viewer ? ':viewer' : ''}${pv.viewer?.strip ? ':strip' : ''}`;
+      const walk = [];
+      walk.push(at());                          // opens on the first thumbnail
+      pv.key('right'); walk.push(at());        // next frame
+      pv.key('up'); walk.push(at());           // the chapter row, on this frame's chapter
+      pv.key('right'); walk.push(at());        // next chapter: the frame follows
+      pv.key('down'); walk.push(at());         // first thumbnail of that chapter
+      pv.key('up'); pv.key('up'); walk.push(at());   // chapter row, then Back
+      pv.key('down'); walk.push(at());         // back where it was
+      check('Remote: thumbnails, Up to the chapter row, Left/Right along chapters with the frame following, Down to that chapter\'s first thumbnail, Up again to Back',
+        walk.join(' ') === 'page:photo-0:0 page:photo-1:1 page:chap-0:1 page:chap-1:2 page:photo-2:2 back:chap-1:2 page:chap-1:2', walk.join(' '));
+      pv.key('down'); pv.key('left'); pv.key('left'); pv.key('left'); const leftEnd = at();
+      pv.key('down'); pv.key('right');
+      pv.key('enter'); const played = pv.playing; pv.key('back'); const afterPlay = at();
+      check('Remote: Left past the first thumbnail is Back; Select on a film with sound plays it, Menu comes back to the same frame', leftEnd.startsWith('back:') && /From the air/.test(played || '') && !pv.playing && afterPlay === 'page:photo-1:1', `${leftEnd} ${played} ${afterPlay}`);
+      pv.key('right'); pv.key('enter');
+      const inViewer = at();
+      const vstage = pv.stage.classList.contains('viewer') && pv.stage.classList.contains('finished');
+      pv.key('enter'); const capHidden = pv.viewer.captionHidden; pv.key('enter');
+      pv.key('right'); const vRight = at();
+      pv.key('down'); const strip = at(); pv.key('left'); const stripLeft = at(); pv.key('up'); const stripClosed = at();
+      check('Remote: Select on a photo opens the full-screen viewer (slivers hidden); Select shows/hides the caption; Right steps; Down opens the strip, Left moves along it, Up closes it',
+        inViewer === 'page:photo-2:2:viewer' && vstage && capHidden === true && vRight === 'page:photo-2:3:viewer' && strip === 'page:photo-2:3:viewer:strip' && stripLeft === 'page:photo-2:2:viewer:strip' && stripClosed === 'page:photo-2:2:viewer', [inViewer, vstage, capHidden, vRight, strip, stripLeft, stripClosed].join(' '));
+      await pause(260);
+      const faded = pv.stage.classList.contains('viewer-faded');
+      pv.key('enter'); const wokeOnly = !pv.stage.classList.contains('viewer-faded') && pv.viewer && !pv.viewer.captionHidden;
+      pv.key('playpause'); const mark = pv.stage.querySelector('.tv-vmark')?.textContent; const ss = pv.viewer.slideshow;
+      await pause(260);
+      const turned = pv.galleryIndex !== 2;
+      pv.key('back'); const backWokeOnly = !!pv.viewer;   // the words had faded again: Menu brings them back first
+      pv.key('back'); const backAt = at();
+      check('Remote: the words fade after 4 s (shortened here) and Select only brings them back; Play/Pause starts the slideshow with its mark and frames turn; Menu returns to the leaf on the same frame',
+        faded && wokeOnly && mark === 'Slideshow' && ss && turned && backWokeOnly && backAt === `page:photo-${pv.galleryIndex}:${pv.galleryIndex}` && !pv.stage.classList.contains('viewer'), [faded, wokeOnly, mark, ss, turned, backWokeOnly, backAt].join(' '));
+      // The TV's faded-viewer rules (tvos-dev, 18 Nov 2026).
+      pv.focusThumb(2); pv.key('enter');                       // viewer on a photo
+      pv.key('playpause'); await pause(200);                  // slideshow on; words fade
+      const fadedOn = pv.stage.classList.contains('viewer-faded') && pv.viewer.slideshow;
+      pv.key('playpause');                                     // first Play/Pause: off at once, words back, no mark
+      const ppOff = !pv.viewer.slideshow && !pv.stage.classList.contains('viewer-faded') && !pv.stage.querySelector('.tv-vmark');
+      pv.key('playpause'); await pause(60);                    // on again (turns fast here), words awake
+      pv.key('back');                                          // first Menu: stops it, words back, stays
+      const menu1 = !!pv.viewer && !pv.viewer.slideshow && !pv.stage.classList.contains('viewer-faded');
+      pv.key('back');                                          // second Menu: leaves
+      const menu2 = !pv.viewer;
+      pv.focusThumb(1); pv.key('right'); pv.key('enter');      // a photo (frame 2) in the viewer
+      pv.key('left');                                          // frame 1: the film with sound
+      await pause(200);
+      const fadedOnFilm = pv.stage.classList.contains('viewer-faded');
+      pv.key('enter'); const playedFaded = /From the air/.test(pv.playing || '');
+      pv.key('back');
+      pv.key('left'); pv.key('left'); await pause(250);         // Back focused in the viewer
+      const backKeepsWords = pv.nav.focus === 'back' && !pv.stage.classList.contains('viewer-faded');
+      pv.key('enter');                                         // Select on Back leaves the viewer
+      check('Remote (TV rules): faded, the first Play/Pause turns the slideshow off at once with no words and the words back; the first Menu stops a running slideshow, the second leaves; Select plays a film with sound even while faded; the words stay up while Back has focus',
+        fadedOn && ppOff && menu1 && menu2 && fadedOnFilm && playedFaded && backKeepsWords && !pv.viewer, [fadedOn, ppOff, menu1, menu2, fadedOnFilm, playedFaded, backKeepsWords, !pv.viewer].join(' '));
+      pv.focusThumb(0);
+      await pause(120);
+      const before = pv.galleryIndex;
+      await pause(250);
+      const autoTurned = pv.galleryIndex !== before && pv.nav.stop === `photo-${pv.galleryIndex}`;
+      pv.key('left');
+      const stopped = !pv.gal.running;
+      check('Remote: Thumbnails that play by themselves start turning after 20 s untouched (shortened here), the focus follows; any press stops them', autoTurned && stopped, `${before} → ${pv.galleryIndex}, running ${pv.gal.running}`);
+      // Slideshow style.
+      setOptions(gp, { style: 'slideshow', seconds: 5 });
+      pv.setDoc(doc); pv.goBack(); pv.showPage('golf-gallery'); pv.focusEntry();
+      const s0 = at();
+      await pause(200);
+      const ssTurned = pv.galleryIndex > 0;
+      const i0 = pv.galleryIndex;
+      pv.key('right'); const held = pv.gal.held && pv.galleryIndex === Math.min(i0 + 1, 3);
+      const iHeld = pv.galleryIndex; await pause(120); const stillHeld = pv.galleryIndex === iHeld;
+      await pause(300); const resumed = !pv.gal.held;
+      pv.key('enter'); const ssViewer = !!pv.viewer; pv.key('back');
+      pv.key('up'); const ssBack = at().startsWith('back:');
+      check('Remote: Slideshow style opens on the frame (one stop) turning by itself; Left/Right step and hold it for 30 s (shortened here); Select opens the viewer; Up is Back',
+        s0 === 'page:gframe:0' && ssTurned && held && stillHeld && resumed && ssViewer && ssBack, [s0, ssTurned, held, stillHeld, resumed, ssViewer, ssBack].join(' '));
+      pv.setMode('edit');
+      check('Remote: the clocks stop in edit mode', !Object.keys(pv.galTimers).length && !pv.viewer);
+      pv.destroy(); host.remove();
+    }
+    // Publishing through the fake GitHub: the bundle blob carries the new fields.
+    {
+      model.load(pub0, null);
+      model.commit('publish gallery', (d) => { const g = findIn(d, 'golf-gallery').page; setFrames(g, g.images.map((image, i) => ({ image, caption: `Frame ${i + 1}`, group: i < 2 ? 'Hole 1' : 'Hole 2' }))); setOptions(g, { autoplay: true }); g.body = 'Intro'; });
+      const { bundle: bp } = buildBundle(model.draft, { revision: pub0.version.revision + 1, held: validateAll(model.draft, { imageSize: () => null }) });
+      const blobs = [];
+      const fv = utf8ToBase64(JSON.stringify({ schema: 1, revision: pub0.version.revision, bundle: pub0.version.bundle, publishedAt: pub0.version.publishedAt }));
+      const fh = utf8ToBase64(JSON.stringify(pub0.history || []));
+      const fakeG = async (method, url, body) => {
+        const path = url.replace(config.apiBase, '');
+        if (method === 'GET' && path.endsWith('/git/ref/heads/main')) return { object: { sha: 'aaaa1111' } };
+        if (method === 'GET' && path.includes('/git/commits/')) return { tree: { sha: 'tree0000' } };
+        if (method === 'GET' && path.includes('version.json')) return { content: fv };
+        if (method === 'GET' && path.includes('history.json')) return { content: fh };
+        if (method === 'POST' && path.endsWith('/git/blobs')) { blobs.push(body); return { sha: 'blob' + blobs.length }; }
+        if (method === 'POST' && path.endsWith('/git/trees')) return { sha: 'tree1111' };
+        if (method === 'POST' && path.endsWith('/git/commits')) return { sha: 'commit2222' };
+        if (method === 'PATCH' && path.endsWith('/git/refs/heads/main')) return { object: { sha: body.sha } };
+        throw Object.assign(new Error('unexpected ' + method + ' ' + path), { status: 500 });
+      };
+      const sg = new GitHubStore({ transport: fakeG });
+      sg.setToken('');
+      await sg.publish({ bundle: bp, basedOnRevision: pub0.version.revision, summary: [], by: 'Self-test', media: [], mediaIndex: pub0.mediaIndex });
+      const texts = blobs.map((b) => { try { return b.encoding === 'base64' ? new TextDecoder().decode(Uint8Array.from(atob(b.content), (c) => c.charCodeAt(0))) : b.content; } catch { return ''; } });
+      const pubB = texts.map((t) => { try { return JSON.parse(t); } catch { return null; } }).find((j) => j && j.home);
+      const pg = pubB && findIn(pubB, 'golf-gallery')?.page;
+      check('Publish (GitHub mode, fake transport): the bundle carries the gallery\'s new fields, with `images` for older apps', !!pg && pg.gallery?.autoplay === true && pg.slides?.[0]?.caption === 'Frame 1' && pg.slides?.[0]?.group === 'Hole 1' && pg.body === 'Intro' && canonical(pg.images) === canonical(findIn(pub0.bundle, 'golf-gallery').page.images), pg ? JSON.stringify(pg).slice(0, 200) : 'no bundle blob');
+      model.load(pub0, null);
+    }
   }
 
   // 8. QR.

@@ -8,9 +8,15 @@
 // hoursTitle, childrenTitle, ListItem.qr, and slides on gallery pages (with
 // `images` kept filled with the frames' stills so an older app still shows
 // a photo gallery).
+// The better gallery (phase B, GALLERY-CONTRACT.md), same rules: on gallery
+// pages `gallery` {style, seconds, autoplay} (left out when it is the
+// default), `body` (the intro), `qr`, and on each slide caption, group, fit
+// ('whole' only) and sound (true only, film frames only). See gallery.js.
+
+import { framesOf, frameNeedsSlide, frameStill as still, galleryOptions, isDefaultOptions, cleanChapter, chapterKey } from './gallery.js';
 
 const PAGE_KEYS = ['id', 'type', 'title', 'subtitle', 'kicker', 'image', 'body', 'facts', 'hoursTitle', 'hours', 'qr', 'childrenTitle', 'children', 'sections', 'images', 'items',
-  'description', 'photos', 'films', 'backgroundFilm', 'slides'];
+  'description', 'photos', 'films', 'backgroundFilm', 'slides', 'gallery'];
 const HOTEL_KEYS = ['name', 'tagline', 'reception', 'roomService', 'wifiName', 'wifiPassword', 'checkout'];
 
 /** Which page types may carry each stage-2 field (PROTOTYPE.md 2a–2c). Anything else is left out of the bundle. */
@@ -22,6 +28,7 @@ export const ALLOWS = {
   description: ['finished'],
   hoursTitle: ['info', 'menu'],
   childrenTitle: ['info', 'hub', 'menu', 'gallery', 'list', 'contact'],
+  gallery: ['gallery'],
 };
 const allows = (key, type) => ALLOWS[key].includes(type);
 
@@ -94,11 +101,19 @@ function cleanBackgroundFilm(bg) {
 
 // Slides reference the file the editor chose: media/<hash>-3840.jpg when the
 // upload was 4K (PROTOTYPE.md 2b), else -1920.jpg. The path is kept as is.
-function cleanSlides(slides) {
+// Finished pages ignore the gallery's slide fields, so they are never written there.
+function cleanSlides(slides, gallery = false) {
   return (slides || []).map((s) => {
-    if (present(s.film)) { const out = { film: s.film }; if (present(s.poster)) out.poster = s.poster; return out; }
-    if (present(s.image)) return { image: s.image };
-    return null;
+    let out;
+    if (present(s.film)) { out = { film: s.film }; if (present(s.poster)) out.poster = s.poster; }
+    else if (present(s.image)) out = { image: s.image };
+    else return null;
+    if (!gallery) return out;
+    if (present(s.caption) && String(s.caption).trim()) out.caption = String(s.caption).trim();
+    if (present(s.group) && cleanChapter(s.group)) out.group = cleanChapter(s.group);
+    if (s.fit === 'whole') out.fit = 'whole';
+    if (out.film && s.sound === true) out.sound = true;
+    return out;
   }).filter(Boolean);
 }
 
@@ -106,7 +121,7 @@ function cleanSlides(slides) {
 const childrenHeading = (page) => (allows('childrenTitle', page.type) ? heading(page.childrenTitle) : undefined);
 
 /** What a gallery frame shows before anything plays: the photo, or a film's poster. */
-export const frameStill = (s) => (s && (s.image || s.poster)) || null;
+export const frameStill = still;
 
 /** One page in bundle shape, or null if it must be left out. */
 export function cleanPage(page, held = null) {
@@ -131,7 +146,8 @@ export function cleanPage(page, held = null) {
     photos: allows('photos', page.type) ? cleanPhotos(page.photos) : undefined,
     films: allows('films', page.type) ? cleanFilms(page.films) : undefined,
     backgroundFilm: allows('backgroundFilm', page.type) ? cleanBackgroundFilm(page.backgroundFilm) : undefined,
-    slides: allows('slides', page.type) ? cleanSlides(page.slides) : undefined,
+    slides: allows('slides', page.type) ? cleanSlides(page.type === 'gallery' ? framesOf(page) : page.slides, page.type === 'gallery') : undefined,
+    gallery: allows('gallery', page.type) && !isDefaultOptions(galleryOptions(page)) ? galleryOptions(page) : undefined,
   };
   const hours = raw.hours;
   // A heading with nothing under it is left out.
@@ -140,8 +156,12 @@ export function cleanPage(page, held = null) {
   // A gallery with frames: `images` always carries their stills, so an app
   // that does not know `slides` still shows every frame as a photo. Frames
   // that are all photos are published as plain `images`, as before.
+  // A frame with a caption, chapter, show whole or sound needs `slides` too.
   if (page.type === 'gallery' && raw.slides && raw.slides.length) {
-    if (raw.slides.some((s) => s.film)) raw.images = raw.slides.map(frameStill).filter(Boolean);
+    // One spelling per chapter (the first used), as the TV compares chapter names exactly.
+    const spelt = new Map();
+    for (const sl of raw.slides) if (sl.group) { const k = chapterKey(sl.group); if (!spelt.has(k)) spelt.set(k, sl.group); sl.group = spelt.get(k); }
+    if (raw.slides.some(frameNeedsSlide)) raw.images = raw.slides.map(frameStill).filter(Boolean);
     else { raw.images = raw.slides.map((s) => s.image); raw.slides = undefined; }
   }
   const out = {};

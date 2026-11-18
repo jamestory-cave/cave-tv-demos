@@ -5,6 +5,7 @@
 
 import { el } from '../util.js';
 import { qrSVG } from './qr.js';
+import { framesOf, frameStill, galleryOptions, frameCount, chapterRuns, hasChapters, chapterKey, cleanChapter, GALLERY_WORDS } from '../gallery.js';
 
 const visible = (kids) => (kids || []).filter((c) => !c.hidden);
 
@@ -323,47 +324,158 @@ function renderHub(page, ctx) {
 }
 
 // ---- gallery (fills the leaf, ignores the chrome inset) -----------------
-// Frames are the page's `slides` when it has any (photos and silent film
-// loops; Rhys, 9 Nov 2026), else its `images`. A film frame shows its poster
-// with a "loops silently" label: the preview never plays video.
+// Frames are the page's `slides` when it has any (photos, silent loops and
+// films with sound), else its `images`. The better gallery (phase B,
+// GALLERY-CONTRACT.md, SPEC 5): captions, a chapter row, the counter "Hole 7 ·
+// 2 of 3", show whole, an intro and a QR card, and two styles: Thumbnails
+// (today's) or Slideshow (one stop, frames turn by themselves). Every
+// per-frame element carries data-photo="i" and is shown with .on, so the
+// stage can step frames with a crossfade without drawing the page again.
+// The preview never plays video: a loop shows its poster with a label, a
+// film with sound its poster with a play mark.
+
+/** A film frame's length as the TV shows it beside the counter, when the Builder knows it. */
+const filmLen = (ctx, fr) => { const s = ctx.media?.film?.(fr.film)?.seconds; return s ? fmtLen(s) : ''; };
+
+function galleryPhoto(fr, i, index, ctx, w) {
+  const p = el('div.tv-gphoto' + (i === index ? '.on' : '') + (fr.fit === 'whole' ? '.whole' : ''));
+  const url = ctx.media.url(frameStill(fr), w);
+  if (url) p.style.backgroundImage = `url("${url}")`;
+  p.dataset.photo = String(i);
+  if (fr.film && fr.sound === true) { const g = playGlyph(); g.classList.add('tv-gplay'); p.append(g); }
+  else if (fr.film) p.append(el('div.tv-gfilm', el('span.dot'), GALLERY_WORDS.loop));
+  return p;
+}
+
+/** The counter line for frame i: "<b>Hole 7</b> · 2 of 3", plus a note for a film with sound. */
+function counterLine(frames, i, ctx, viewer) {
+  const fr = frames[i];
+  const c = frameCount(frames, i);
+  const line = el('div.tv-gcount', { dataset: { photo: String(i) } });
+  if (c.chapter) line.append(el('b', c.chapter), ' · ');
+  line.append(c.text);
+  if (fr.film && fr.sound === true) {
+    const len = filmLen(ctx, fr);
+    line.append(viewer ? GALLERY_WORDS.soundInViewer : GALLERY_WORDS.soundInLeaf(len));
+  }
+  return line;
+}
+
 function renderGallery(page, ctx) {
-  const root = el('div.tv-gallery');
-  const frames = (page.slides || []).length ? page.slides : (page.images || []).map((image) => ({ image }));
-  const images = frames.map((fr) => fr.image || fr.poster || null);
-  const index = Math.min(ctx.galleryIndex || 0, Math.max(0, images.length - 1));
-  images.forEach((src, i) => {
-    const p = el('div.tv-gphoto' + (i === index ? '.on' : ''));
-    const url = ctx.media.url(src, 1920);
-    if (url) p.style.backgroundImage = `url("${url}")`;
-    p.dataset.photo = String(i);
-    if (frames[i].film) p.append(el('div.tv-gfilm', el('span.dot'), 'Film · loops silently'));
-    root.append(p);
-  });
+  const opts = galleryOptions(page);
+  const slideshow = opts.style === 'slideshow';
+  const root = el('div.tv-gallery' + (slideshow ? '.slideshow' : ''));
+  // A frame shown whole stays inside the TV's safe area: 80 from the screen's left edge when the leaf reaches it.
+  root.style.setProperty('--whole-left', `${Math.max(0, 80 - (1920 - (ctx.layout?.width || 1920)))}px`);
+  const frames = framesOf(page);
+  const index = Math.min(ctx.galleryIndex || 0, Math.max(0, frames.length - 1));
+  frames.forEach((fr, i) => root.append(galleryPhoto(fr, i, index, ctx, 1920)));
   root.append(el('div.tv-gscrim'), el('div.tv-gtop'));
+  // Slideshow style: the frame is the one stop (a ring round the picture when focused).
+  if (slideshow && frames.length) root.append(stop(el('div.tv-gframe'), 'gframe', { entry: '1', frame: '1' }));
   const cap = el('div.tv-gcap');
+  const row = el('div.tv-grow');
   const capIn = el('div.tv-cap-in');
   const kicker = page.kicker ?? ctx.layout.fallbackKicker;
   if (kicker) capIn.append(f(el('div.tv-kicker', kicker.toUpperCase()), page.id, 'kicker', 'Small caps line'));
   capIn.append(f(el('div.tv-title', page.title || ' '), page.id, 'title', 'Title'));
-  if (images.length) capIn.append(el('div.tv-gcount', { dataset: { count: '1' } }, `${index + 1} of ${images.length}`));
-  cap.append(capIn);
-  const thumbs = el('div.tv-thumbs');
-  images.forEach((src, i) => {
-    const t = stop(el('div.tv-thumb' + (i === index ? '.on' : '') + (frames[i].film ? '.film' : '')), `photo-${i}`, { photo: String(i), ...(i === 0 ? { entry: '1' } : {}) });
-    const url = ctx.media.url(src, 800);
-    if (url) t.style.backgroundImage = `url("${url}")`;
-    if (frames[i].film) t.append(el('span.tv-film-mark'));
-    thumbs.append(f(t, page.id, `images.${i}`, frames[i].film ? `Film ${i + 1}` : `Photo ${i + 1}`));
+  if (page.body) capIn.append(f(el('div.tv-gintro', page.body), page.id, 'body', 'Intro'));
+  const caps = el('div.tv-gcaps');
+  frames.forEach((fr, i) => {
+    const c = el('div.tv-gcaption' + (i === index ? '.on' : ''), { dataset: { photo: String(i) } }, fr.caption || '');
+    caps.append(f(c, page.id, `images.${i}.caption`, `Caption on frame ${i + 1}`));
   });
-  cap.append(f(thumbs, page.id, 'images', 'Photos'));
-  const ct = childTiles(page, ctx, !images.length, 300, 168);
+  if (frames.some((fr) => (fr.caption || '').trim())) capIn.append(caps);
+  if (frames.length) {
+    const counts = el('div.tv-gcounts');
+    frames.forEach((_, i) => { const line = counterLine(frames, i, ctx, false); if (i === index) line.classList.add('on'); counts.append(line); });
+    capIn.append(counts);
+  }
+  row.append(capIn);
+  // The QR card, bottom-right above the thumbnails; not a stop (guests scan it). Hidden in the viewer.
+  if (hasAddress(page.qr)) row.append(qrCard(page.qr, page.id, 'qr', el('div.tv-card.tv-qr.tv-gqr')));
+  cap.append(row);
+  if (!slideshow) {
+    if (hasChapters(frames)) {
+      const chips = el('div.tv-gchips');
+      const inner = el('div.tv-strip-in');
+      chapterRuns(frames).forEach((r, k) => {
+        if (!r.key) return;
+        const on = index >= r.start && index < r.start + r.count;
+        const chip = stop(el('div.tv-chip' + (on ? '.cur' : '')), `chap-${k}`, { chapter: String(r.start), runEnd: String(r.start + r.count - 1) });
+        chip.textContent = r.name;
+        inner.append(f(chip, page.id, `images.${r.start}.group`, `Chapter: ${r.name}`));
+      });
+      chips.append(inner);
+      cap.append(chips);
+    }
+    const thumbs = el('div.tv-thumbs');
+    const inner = el('div.tv-strip-in');
+    frames.forEach((fr, i) => {
+      const t = stop(el('div.tv-thumb' + (i === index ? '.on' : '') + (fr.film ? '.film' : '') + (fr.fit === 'whole' ? '.whole' : '')), `photo-${i}`, { photo: String(i), ...(i === 0 ? { entry: '1' } : {}) });
+      const url = ctx.media.url(frameStill(fr), 800);
+      if (url) t.style.backgroundImage = `url("${url}")`;
+      if (fr.film) t.append(el('span.tv-film-mark' + (fr.sound === true ? '.sound' : '.loop')));
+      inner.append(f(t, page.id, `images.${i}`, fr.film ? `Film ${i + 1}` : `Photo ${i + 1}`));
+    });
+    thumbs.append(inner);
+    cap.append(f(thumbs, page.id, 'images', 'Photos and films'));
+  } else if (frames.length) {
+    const dots = el('div.tv-gdots');
+    const d = el('div.dots');
+    if (frames.length <= 40) frames.forEach((_, i) => d.append(el('i' + (i === index ? '.on' : ''), { dataset: { photo: String(i) } })));
+    dots.append(d, el('div.tv-gnext', ctx.galleryState || GALLERY_WORDS.turnsEvery(opts.seconds)));
+    cap.append(dots, el('div.tv-gbar', el('i', { style: { animationDuration: `${opts.seconds}s` } })));
+  }
+  const ct = childTiles(page, ctx, !frames.length, 300, 168);
   if (ct) {
-    const row = ct.classList.contains('tv-tiles') ? ct : ct.querySelector('.tv-tiles');
-    row.classList.add('tv-gtiles');
-    if (ct !== row) ct.classList.add('tv-kids-g');
+    const tilesRow = ct.classList.contains('tv-tiles') ? ct : ct.querySelector('.tv-tiles');
+    tilesRow.classList.add('tv-gtiles');
+    if (ct !== tilesRow) ct.classList.add('tv-kids-g');
     cap.append(ct);
   }
+  if (!frames.length) root.append(el('div.tv-empty', 'No photos or films yet. Add them on the right.'));
   root.append(cap);
+  return root;
+}
+
+/**
+ * The full-screen viewer (SPEC 5.3): the whole TV, slivers hidden as a
+ * finished page does. Caption bottom-left with the chapter as a gold kicker
+ * and the counter; Down opens a strip of thumbnails with chapter names. The
+ * intro and QR are hidden here.
+ *   ctx.galleryIndex, ctx.viewer = {strip, captionHidden, mark}
+ */
+export function renderGalleryViewer(page, ctx) {
+  const frames = framesOf(page);
+  const index = Math.min(ctx.galleryIndex || 0, Math.max(0, frames.length - 1));
+  const v = ctx.viewer || {};
+  const root = el('div.tv-gviewer' + (v.strip ? '.strip' : '') + (v.captionHidden ? '.nocap' : ''));
+  frames.forEach((fr, i) => root.append(galleryPhoto(fr, i, index, ctx, 1920)));
+  root.append(el('div.tv-vgrad'));
+  const capBox = el('div.tv-vcap');
+  frames.forEach((fr, i) => {
+    const b = el('div.tv-vcap-one' + (i === index ? '.on' : ''), { dataset: { photo: String(i) } });
+    const c = frameCount(frames, i);
+    if (c.chapter) b.append(el('div.tv-kicker', c.chapter.toUpperCase()));
+    if (fr.caption) b.append(f(el('div.tv-vcaption', fr.caption), page.id, `images.${i}.caption`, `Caption on frame ${i + 1}`));
+    b.append(counterLine(frames, i, ctx, true));
+    capBox.append(b);
+  });
+  root.append(capBox);
+  const strip = el('div.tv-vstrip');
+  const inner = el('div.tv-strip-in');
+  frames.forEach((fr, i) => {
+    const t = el('div.tv-thumb' + (i === index ? '.on.is-focused' : '') + (fr.film ? '.film' : '') + (fr.fit === 'whole' ? '.whole' : ''), { dataset: { photo: String(i) } });
+    const url = ctx.media.url(frameStill(fr), 800);
+    if (url) t.style.backgroundImage = `url("${url}")`;
+    if (fr.film) t.append(el('span.tv-film-mark' + (fr.sound === true ? '.sound' : '.loop')));
+    if ((i === 0 || chapterKey(frames[i - 1].group) !== chapterKey(fr.group)) && chapterKey(fr.group)) t.append(el('span.tv-grp', cleanChapter(fr.group).toUpperCase()));
+    inner.append(t);
+  });
+  strip.append(inner);
+  root.append(strip);
+  if (v.mark) root.append(el('div.tv-vmark', v.mark));
   return root;
 }
 

@@ -1,12 +1,13 @@
 // Home: the tree drawn as strips. Reorder, hide, add, rename, delete, open.
 
 import { el, clear, svgIcon, plural, fmtDate } from '../util.js';
-import { model, newPage, movePage, addPage, removePage, PAGE_TYPES } from '../model.js';
+import { model, newPage, movePage, addPage, removePage, PAGE_TYPES, pageChoices } from '../model.js';
 import { pageStatus } from '../changes.js';
 import { LIMITS } from '../validate.js';
 import { toast, modal, confirmModal, promptModal, sortable, textField, uid } from '../ui.js';
 import { TVPreview } from '../preview/stage.js';
 import { moveModal } from './move.js';
+import { tagOf, SCOPE_SHORT } from '../overrides.js';
 
 const STATUS = { live: 'Live', changed: 'Changed', new: 'New', hidden: 'Hidden' };
 
@@ -36,6 +37,9 @@ export function mount(host, app, params) {
     const eye = el('button.eye', { type: 'button', 'aria-label': page.hidden ? 'Show to guests' : 'Hide from guests', title: page.hidden ? 'Show to guests' : 'Hide from guests',
       onclick: (e) => { e.stopPropagation(); toggleHidden(page.id); } }, svgIcon(page.hidden ? 'eyeOff' : 'eye', 15));
     card.append(el('div.top', el('span.grip', { title: 'Drag to reorder' }, svgIcon('grip', 14)), eye));
+    // Hotel server: a page with a version per room type or room says so on its strip.
+    const varies = app.server ? tagOf(model.draft, page.id, 'page') : null;
+    if (varies) card.append(el('span.vbadge', { title: `This page has a version ${SCOPE_SHORT[varies]}` }, varies === 'type' ? 'By room type' : 'By room'));
     card.append(el('div.t', el('span', page.title || 'Untitled')));
     card.append(el('div.st', blocked ? 'Held back' : STATUS[status]));
     card.addEventListener('click', () => select(page.id));
@@ -197,7 +201,7 @@ export function mount(host, app, params) {
     let title = '';
     const tpl = el('div.tpl');
     const types = isHome ? ['hub', 'info', 'menu', 'gallery', 'list', 'contact', 'finished'] : ['info', 'menu', 'gallery', 'list', 'finished'];
-    const buttons = types.map((t) => el('button', { type: 'button', class: t === type ? 'on' : '', onclick: () => { type = t; buttons.forEach((b) => b.classList.toggle('on', b.dataset.t === t)); }, dataset: { t } }, el('b', PAGE_TYPES[t].label), el('span', PAGE_TYPES[t].hint)));
+    const buttons = pageChoices(types).map((c) => el('button', { type: 'button', class: c.key === type ? 'on' : '', onclick: () => { type = c.key; buttons.forEach((b) => b.classList.toggle('on', b.dataset.t === c.key)); }, dataset: { t: c.key } }, el('b', c.label), el('span', c.hint)));
     tpl.append(...buttons);
     const siblings = (parent.children || []).map((c) => (c.title || '').trim().toLowerCase());
     const dupe = el('div.help', { style: { color: 'var(--amber)' } });
